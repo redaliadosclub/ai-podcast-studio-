@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ElevenLabsSettings, GeneratedEpisodeAudio } from '../types';
-import { Play, Pause, Download, Sliders, Key, Mic, RefreshCw, Sparkles, CheckCircle2, AlertCircle, FileDown, FastForward, Copy, ExternalLink, Code } from 'lucide-react';
+import { Play, Pause, Download, Sliders, Key, Mic, RefreshCw, Sparkles, CheckCircle2, AlertCircle, FileDown, FileText, FastForward, Copy, ExternalLink, Code } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 
 interface ProductionStudioViewProps {
   scriptText: string;
@@ -291,7 +292,145 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadScript = () => {
+  const handleDownloadTxt = () => {
+    if (!scriptText.trim()) {
+      setErrorMessage('No hay texto en el guion para exportar.');
+      return;
+    }
+    const cleanTitle = (scriptTitle || 'guion_podcast').trim();
+    const divider = '==================================================';
+    const content = `${divider}
+VOICELAB COACH · GUION DE PODCAST PARA CLONACIÓN
+${divider}
+Título: ${cleanTitle}
+Fecha: ${new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })}
+Longitud: ${scriptText.length} caracteres
+Duración estimada: ~${Math.round(scriptText.split(/\s+/).length / 2.2)} seg
+${divider}
+
+${scriptText}
+`;
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${cleanTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}_guion.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadPdf = () => {
+    if (!scriptText.trim()) {
+      setErrorMessage('No hay texto en el guion para exportar.');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const title = scriptTitle || 'Guion de Podcast';
+      const cleanTitle = title.trim();
+      const dateStr = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+      const wordCount = scriptText.trim().split(/\s+/).filter(Boolean).length;
+      const durationSec = Math.round(wordCount / 2.2);
+      const estMin = Math.floor(durationSec / 60);
+      const estSec = durationSec % 60;
+
+      // Header Bar
+      doc.setFillColor(15, 23, 42); // slate-900
+      doc.rect(0, 0, 210, 24, 'F');
+
+      // Studio label
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(129, 140, 248); // indigo-400
+      doc.text('VOICELAB COACH · GUION MAESTRO PARA LOCUCIÓN', 14, 9);
+
+      // Title in header
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(255, 255, 255);
+      doc.text(cleanTitle.slice(0, 50), 14, 18);
+
+      // Meta info banner
+      doc.setFillColor(241, 245, 249); // slate-100
+      doc.rect(0, 24, 210, 8, 'F');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105); // slate-600
+      doc.text(
+        `Fecha: ${dateStr}   |   ${wordCount} palabras   |   Duración estimada: ~${estMin}m ${estSec}s   |   Marcadores de prosodia incluidos`,
+        14,
+        29.5
+      );
+
+      // Script Text Body
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 14;
+      const maxWidth = pageWidth - margin * 2;
+
+      const paragraphs = scriptText.split('\n');
+      let y = 39;
+      const lineHeight = 6;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+
+      for (const para of paragraphs) {
+        if (!para.trim()) {
+          y += 3.5;
+          continue;
+        }
+
+        const lines = doc.splitTextToSize(para, maxWidth);
+        for (const line of lines) {
+          if (y + lineHeight > pageHeight - 16) {
+            doc.addPage();
+            y = 18;
+          }
+
+          if (line.includes('[') && line.includes(']')) {
+            doc.setTextColor(79, 70, 229); // indigo-600
+            doc.setFont('helvetica', 'bold');
+          } else {
+            doc.setTextColor(30, 41, 59); // slate-800
+            doc.setFont('helvetica', 'normal');
+          }
+
+          doc.text(line, margin, y);
+          y += lineHeight;
+        }
+        y += 2;
+      }
+
+      // Footer page numbering
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.text(
+          `Página ${i} de ${totalPages} · VoiceLab Coach`,
+          pageWidth / 2,
+          pageHeight - 7,
+          { align: 'center' }
+        );
+      }
+
+      doc.save(`${cleanTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}_guion.pdf`);
+    } catch (err: any) {
+      console.error('Error generating PDF:', err);
+      setErrorMessage('Error al generar el PDF: ' + (err?.message || 'Error desconocido'));
+    }
+  };
+
+  const handleDownloadMd = () => {
     const blob = new Blob(
       [
         `# ${scriptTitle || 'Episodio de Podcast'}\nFecha: ${new Date().toLocaleDateString()}\n\n${scriptText}`,
@@ -700,26 +839,49 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
               </div>
             )}
 
-            {/* Script Text Summary & Download */}
-            <div className="pt-2 border-t border-neutral-800 flex items-center justify-between text-xs text-neutral-400">
-              <span className="truncate max-w-[280px]">
+            {/* Script Text Summary & Export (.txt / .pdf) */}
+            <div className="pt-3 border-t border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-neutral-400">
+              <span className="truncate max-w-[220px]">
                 Guion activo: {scriptText.length} caracteres
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
+                  type="button"
                   onClick={onGoToEditor}
-                  className="text-neutral-300 hover:text-white transition-colors"
+                  className="px-2.5 py-1 rounded bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white transition-colors"
                 >
                   Editar Guion
                 </button>
-                <span aria-hidden="true">·</span>
-                <button
-                  onClick={handleDownloadScript}
-                  className="text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1"
-                >
-                  <FileDown className="w-3.5 h-3.5" />
-                  Descargar Guion (.md)
-                </button>
+
+                <div className="flex items-center gap-1.5 pl-1.5 border-l border-neutral-800">
+                  <span className="text-[11px] text-neutral-500 font-medium">Exportar guion:</span>
+                  <button
+                    type="button"
+                    onClick={handleDownloadTxt}
+                    className="px-2.5 py-1 rounded bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-indigo-400 hover:text-indigo-300 font-semibold transition-colors flex items-center gap-1"
+                    title="Descargar guion en texto plano (.txt)"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>.TXT</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadPdf}
+                    className="px-2.5 py-1 rounded bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-700/60 text-indigo-300 hover:text-white font-semibold transition-colors flex items-center gap-1 shadow-sm"
+                    title="Descargar guion maquetado en formato PDF (.pdf)"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>.PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadMd}
+                    className="px-2 py-1 rounded bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-400 hover:text-neutral-200 text-[11px] transition-colors"
+                    title="Descargar en formato Markdown (.md)"
+                  >
+                    .MD
+                  </button>
+                </div>
               </div>
             </div>
           </div>

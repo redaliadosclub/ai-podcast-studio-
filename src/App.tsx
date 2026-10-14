@@ -6,10 +6,12 @@ import { SamplesManagerView } from './components/SamplesManagerView';
 import { ElevenLabsGuideView } from './components/ElevenLabsGuideView';
 import { PodcastScriptEditorView } from './components/PodcastScriptEditorView';
 import { ProductionStudioView } from './components/ProductionStudioView';
+import { UserGuideModal } from './components/UserGuideModal';
 import { RecordedSample, StudioStepId } from './types';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<StudioStepId>('teleprompter');
+  const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
 
   // Guided Mode vs Free Mode
   const [isGuidedMode, setIsGuidedMode] = useState<boolean>(() => {
@@ -129,6 +131,7 @@ Quédate conmigo, porque hoy vamos a desgranar paso a paso cómo lograrlo sin co
         samplesCount={samples.length}
         unlockedStepMax={unlockedStepMax}
         isGuidedMode={isGuidedMode}
+        onOpenGuide={() => setIsGuideOpen(true)}
       />
 
       {/* Main Viewport */}
@@ -211,10 +214,24 @@ Quédate conmigo, porque hoy vamos a desgranar paso a paso cómo lograrlo sin co
               Paso 5: Master Final
             </button>
             <span aria-hidden="true">·</span>
+            <button
+              onClick={() => setIsGuideOpen(true)}
+              className="text-indigo-400 hover:text-indigo-300 transition-colors font-medium"
+            >
+              📖 Manual & Tutorial
+            </button>
+            <span aria-hidden="true">·</span>
             <span className="font-mono tabular-nums">5 Pasos Guiados</span>
           </div>
         </div>
       </footer>
+
+      {/* Interactive Creator Manual & Tour Modal */}
+      <UserGuideModal
+        isOpen={isGuideOpen}
+        onClose={() => setIsGuideOpen(false)}
+        onGoToStep={(step) => setActiveTab(step)}
+      />
     </div>
   );
 }

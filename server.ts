@@ -129,6 +129,50 @@ Responde en formato JSON:
   }
 });
 
+// Endpoint: Vocal Emotion & Sentiment Analysis
+app.post('/api/script/analyze-sentiment', async (req: Request, res: Response) => {
+  try {
+    const { scriptText } = req.body;
+
+    if (!scriptText || scriptText.trim().length === 0) {
+      return res.status(400).json({ error: 'Texto no proporcionado para el análisis de sentimiento.' });
+    }
+
+    const systemInstruction = `Eres un Director Vocal y Coach Emocional experto en podcasts y locución con clonación de voz.
+Tu misión es realizar un análisis de sentimientos del texto del guion y sugerir marcadores emocionales precisos para enriquecer la entonación y expresividad del locutor o modelo de clonación (por ejemplo: [Emocionado], [Reflexivo], [Susurrado], [Enérgico], [Cálido y cercano], [Intrigado], [Nostálgico], [Solemne], [Aliviado], [Jocoso/Risa]).
+
+Debes devolver un objeto JSON con el siguiente esquema exacto:
+{
+  "overallSentiment": "Descripción concisa del tono emocional global (ej. 'Inspirador, reflexivo y con clímax enérgico')",
+  "dominantEmotion": "Emoción principal identificada (ej. 'Reflexivo' o 'Emocionado')",
+  "sentimentScore": "Positivo | Reflexivo | Intenso | Enérgico | Íntimo",
+  "suggestedMarkers": [
+    {
+      "marker": "[Reflexivo]",
+      "context": "Fragmento exacto donde conviene colocarlo",
+      "reason": "Por qué este marcador enriquece la interpretación aquí"
+    }
+  ],
+  "scriptWithSuggestedMarkers": "El guion completo con los marcadores emocionales sugeridos integrados en las oraciones clave para sonar hipernatural."
+}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: `Analiza el sentimiento y sugiere marcadores emocionales para este guion de podcast:\n\n${scriptText}`,
+      config: {
+        systemInstruction,
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const parsed = JSON.parse(response.text || '{}');
+    return res.json(parsed);
+  } catch (error: any) {
+    console.error('Error analyzing script sentiment:', error);
+    return res.status(500).json({ error: 'Error al analizar el sentimiento: ' + error.message });
+  }
+});
+
 // Endpoint: Gemini TTS Audio Preview
 app.post('/api/tts/preview', async (req: Request, res: Response) => {
   try {

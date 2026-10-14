@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { PodcastScript } from '../types';
-import { Sparkles, Wand2, Volume2, ArrowRight, Check, RefreshCw, FileText, Bot, Clock } from 'lucide-react';
+import { Sparkles, Wand2, Volume2, ArrowRight, Check, RefreshCw, FileText, Bot, Clock, Heart, Smile, Sparkle, Tag, CheckCircle2 } from 'lucide-react';
 
 interface PodcastScriptEditorViewProps {
   currentScriptText: string;
@@ -22,6 +22,17 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
   const [isGenerating, setIsGenerating] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
+
+  // Gemini Sentiment Analysis State
+  const [isAnalyzingSentiment, setIsAnalyzingSentiment] = useState(false);
+  const [sentimentResult, setSentimentResult] = useState<{
+    overallSentiment: string;
+    dominantEmotion: string;
+    sentimentScore: string;
+    suggestedMarkers: Array<{ marker: string; context: string; reason: string }>;
+    scriptWithSuggestedMarkers?: string;
+  } | null>(null);
+
   const [scriptTitle, setScriptTitle] = useState('Episodio Piloto');
   const [generatedData, setGeneratedData] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -113,6 +124,35 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
       setErrorMessage('Error en el análisis de prosodia: ' + err.message);
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleAnalyzeSentiment = async () => {
+    setErrorMessage(null);
+    if (!currentScriptText.trim()) {
+      setErrorMessage('Ingresa o genera un texto antes de solicitar el análisis de sentimiento.');
+      return;
+    }
+
+    try {
+      setIsAnalyzingSentiment(true);
+      const res = await fetch('/api/script/analyze-sentiment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scriptText: currentScriptText }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Error al analizar el sentimiento');
+      }
+
+      const data = await res.json();
+      setSentimentResult(data);
+    } catch (err: any) {
+      setErrorMessage('Error en el análisis de sentimiento: ' + err.message);
+    } finally {
+      setIsAnalyzingSentiment(false);
     }
   };
 
@@ -251,13 +291,87 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
             </div>
           </div>
 
-          {/* AI Analysis Result Card */}
+          {/* Gemini Sentiment & Emotional Markers Card */}
+          {sentimentResult && (
+            <div className="border border-indigo-800/60 bg-gradient-to-b from-indigo-950/30 to-neutral-900 rounded-xl p-5 space-y-3.5 shadow-lg">
+              <div className="flex items-center justify-between pb-2 border-b border-indigo-900/50">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-400" />
+                  <h3 className="text-xs font-semibold text-white uppercase tracking-wider">
+                    Análisis Emocional (Gemini)
+                  </h3>
+                </div>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700/60 font-medium">
+                  {sentimentResult.dominantEmotion}
+                </span>
+              </div>
+
+              <div className="text-xs space-y-2.5 text-neutral-300">
+                <div className="p-2.5 bg-neutral-950/80 rounded border border-neutral-800">
+                  <span className="text-neutral-500 text-[11px] font-medium block mb-0.5">
+                    Arco Emocional y Tono:
+                  </span>
+                  <p className="text-neutral-200 leading-relaxed font-normal">
+                    {sentimentResult.overallSentiment}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-neutral-400 text-[11px] font-semibold uppercase tracking-wider block">
+                    Marcadores Sugeridos por Gemini:
+                  </span>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {sentimentResult.suggestedMarkers?.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2.5 rounded bg-neutral-950 border border-neutral-800/80 hover:border-indigo-800/60 transition-colors space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-xs font-bold text-amber-400 bg-amber-950/50 px-2 py-0.5 rounded border border-amber-800/50">
+                            {item.marker}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => insertTag(`${item.marker} `)}
+                            className="text-[11px] px-2 py-0.5 rounded bg-indigo-600/80 hover:bg-indigo-600 text-white font-medium flex items-center gap-1 transition-colors"
+                          >
+                            <Tag className="w-3 h-3" />
+                            Insertar
+                          </button>
+                        </div>
+                        {item.context && (
+                          <p className="text-[11px] text-neutral-300 italic">
+                            &ldquo;{item.context}&rdquo;
+                          </p>
+                        )}
+                        <p className="text-[10px] text-neutral-400 leading-normal">
+                          {item.reason}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {sentimentResult.scriptWithSuggestedMarkers && (
+                  <button
+                    onClick={() => setCurrentScriptText(sentimentResult.scriptWithSuggestedMarkers!)}
+                    className="w-full mt-2 py-2 px-3 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors shadow-sm"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Aplicar Todos los Marcadores al Guion
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* AI Prosody Analysis Result Card */}
           {analysisResult && (
             <div className="border border-neutral-800 bg-neutral-900 rounded-xl p-5 space-y-3">
               <div className="flex items-center gap-2 pb-2 border-b border-neutral-800">
                 <Bot className="w-4 h-4 text-emerald-400" />
                 <h3 className="text-xs font-semibold text-white uppercase tracking-wider">
-                  Diagnóstico del Director Vocal
+                  Diagnóstico de Prosodia & Técnica
                 </h3>
               </div>
 
@@ -324,12 +438,57 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
               </div>
             </div>
 
-            {/* Prosody Tags Toolbar */}
-            <div className="space-y-1.5">
-              <div className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
-                Insertar marcas de prosodia al cursor:
+            {/* Prosody & Emotion Tags Toolbar */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
+                  Marcadores de Entonación & Prosodia al Cursor:
+                </span>
+                <span className="text-[10px] text-neutral-500 hidden sm:inline">
+                  Haz clic para insertar en el texto
+                </span>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => insertTag('[Emocionado] ')}
+                  className="px-2.5 py-1 text-xs rounded bg-neutral-950 hover:bg-neutral-800 border border-amber-800/70 text-amber-300 font-mono transition-colors font-semibold"
+                  title="Expresión de emoción alta y entusiasmo"
+                >
+                  [Emocionado]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('[Reflexivo] ')}
+                  className="px-2.5 py-1 text-xs rounded bg-neutral-950 hover:bg-neutral-800 border border-indigo-800/70 text-indigo-300 font-mono transition-colors font-semibold"
+                  title="Tono pausado, profundo y meditativo"
+                >
+                  [Reflexivo]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('[Enérgico] ')}
+                  className="px-2.5 py-1 text-xs rounded bg-neutral-950 hover:bg-neutral-800 border border-emerald-800/70 text-emerald-300 font-mono transition-colors font-semibold"
+                  title="Fuerza vocal e impulso conversacional"
+                >
+                  [Enérgico]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('[Susurrado] ')}
+                  className="px-2.5 py-1 text-xs rounded bg-neutral-950 hover:bg-neutral-800 border border-pink-800/70 text-pink-300 font-mono transition-colors font-semibold"
+                  title="Confidencia íntima y suave"
+                >
+                  [Susurrado]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertTag('[Cálido] ')}
+                  className="px-2.5 py-1 text-xs rounded bg-neutral-950 hover:bg-neutral-800 border border-rose-800/70 text-rose-300 font-mono transition-colors font-semibold"
+                  title="Cercanía empática"
+                >
+                  [Cálido]
+                </button>
                 <button
                   type="button"
                   onClick={() => insertTag('... ')}
@@ -355,35 +514,14 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
                 </button>
                 <button
                   type="button"
-                  onClick={() => insertTag('[Énfasis] ')}
-                  className="px-2.5 py-1 text-xs rounded bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-emerald-400 font-mono transition-colors"
-                >
-                  [Énfasis]
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertTag('[Tono íntimo / susurro] ')}
-                  className="px-2.5 py-1 text-xs rounded bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-pink-400 font-mono transition-colors"
-                >
-                  [Susurro]
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertTag('[Tono sonriente y alegre] ')}
-                  className="px-2.5 py-1 text-xs rounded bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-amber-400 font-mono transition-colors"
-                >
-                  [Sonrisa]
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertTag('<breath> ')}
+                  onClick={() => insertTag('&lt;breath&gt; ')}
                   className="px-2.5 py-1 text-xs rounded bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-cyan-400 font-mono transition-colors"
                 >
                   &lt;breath&gt;
                 </button>
                 <button
                   type="button"
-                  onClick={() => insertTag('<laugh> ')}
+                  onClick={() => insertTag('&lt;laugh&gt; ')}
                   className="px-2.5 py-1 text-xs rounded bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-yellow-400 font-mono transition-colors"
                 >
                   &lt;laugh&gt;
@@ -404,24 +542,43 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
             </div>
 
             {/* Bottom Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
-              <button
-                onClick={handleAnalyzeProsody}
-                disabled={isAnalyzing || !currentScriptText.trim()}
-                className="py-2 px-3.5 rounded-lg border border-neutral-700 hover:bg-neutral-800 text-xs font-medium text-neutral-200 transition-colors flex items-center gap-2 disabled:opacity-50"
-              >
-                {isAnalyzing ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
-                )}
-                <span>Analizar Prosodia del Texto</span>
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAnalyzeSentiment}
+                  disabled={isAnalyzingSentiment || !currentScriptText.trim()}
+                  className="py-2 px-3.5 rounded-lg border border-indigo-700/80 bg-indigo-950/40 hover:bg-indigo-900/50 text-xs font-semibold text-indigo-200 transition-colors flex items-center gap-2 disabled:opacity-50 shadow-sm"
+                  title="Analiza el sentimiento con Gemini y sugiere marcadores emocionales como [Emocionado], [Reflexivo]"
+                >
+                  {isAnalyzingSentiment ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  )}
+                  <span>Analizar Sentimientos (Gemini)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleAnalyzeProsody}
+                  disabled={isAnalyzing || !currentScriptText.trim()}
+                  className="py-2 px-3 rounded-lg border border-neutral-700 hover:bg-neutral-800 text-xs font-medium text-neutral-300 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isAnalyzing ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Volume2 className="w-3.5 h-3.5 text-neutral-400" />
+                  )}
+                  <span>Prosodia Técnica</span>
+                </button>
+              </div>
 
               <button
+                type="button"
                 onClick={() => onSendToProduction(currentScriptText, scriptTitle)}
                 disabled={!currentScriptText.trim()}
-                className="py-2.5 px-5 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-2 transition-colors disabled:opacity-50 shadow-sm"
+                className="py-2.5 px-5 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-2 transition-colors disabled:opacity-50 shadow-sm ml-auto"
               >
                 <span>Confirmar Guion y Continuar al Paso 5 (Master Final)</span>
                 <ArrowRight className="w-4 h-4" />

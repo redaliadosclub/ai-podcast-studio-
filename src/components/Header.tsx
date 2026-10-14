@@ -8,6 +8,7 @@ interface HeaderProps {
   samplesCount: number;
   unlockedStepMax: number;
   isGuidedMode: boolean;
+  onOpenGuide?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -16,6 +17,7 @@ export const Header: React.FC<HeaderProps> = ({
   samplesCount,
   unlockedStepMax,
   isGuidedMode,
+  onOpenGuide,
 }) => {
   const isTabUnlocked = (stepNum: number) => {
     if (!isGuidedMode) return true;
@@ -117,8 +119,18 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </nav>
 
-        {/* Zone 3: 1 Primary Action */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Zone 3: 1 Primary Action + Guide Trigger */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {onOpenGuide && (
+            <button
+              onClick={onOpenGuide}
+              className="px-3 py-2 text-xs font-medium text-neutral-300 hover:text-white bg-neutral-900 hover:bg-neutral-800 border border-neutral-700/80 rounded-lg transition-colors whitespace-nowrap"
+              title="Abrir Manual y Guía del Creador"
+            >
+              Manual & Tutorial
+            </button>
+          )}
+
           <button
             onClick={() => {
               if (activeTab === 'teleprompter' && isTabUnlocked(2)) {
@@ -133,7 +145,7 @@ export const Header: React.FC<HeaderProps> = ({
                 setActiveTab('teleprompter');
               }
             }}
-            className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-500 active:bg-indigo-700 transition-colors whitespace-nowrap shrink-0"
+            className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-500 active:bg-indigo-700 transition-colors whitespace-nowrap shrink-0 shadow-sm"
           >
             {activeTab === 'production' ? 'Nuevo Episodio' : 'Siguiente Paso'}
           </button>
