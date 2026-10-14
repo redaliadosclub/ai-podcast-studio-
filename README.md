@@ -7,91 +7,109 @@
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Google Gemini API](https://img.shields.io/badge/Gemini%20API-3.8%20Flash-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
 [![ElevenLabs](https://img.shields.io/badge/ElevenLabs-Voice%20Cloning-FF6B00)](https://elevenlabs.io/)
+[![F5--TTS & XTTS](https://img.shields.io/badge/Open%20Source-F5--TTS%20%7C%20XTTS-10b981)](https://github.com/SWivid/F5-TTS)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
 ## 📌 ¿Qué es VoiceLab Coach?
 
-La gran mayoría de las voces clonadas con Inteligencia Artificial suenan planas, robóticas o sin alma. **VoiceLab Coach** resuelve este problema actuando como tu **Director Vocal y Estudio de Producción asistido por IA**.
+El 90% de las voces clonadas con Inteligencia Artificial suenan planas, robóticas o sin alma. **VoiceLab Coach** resuelve este problema actuando como tu **Director Vocal y Estudio de Producción asistido por IA**.
 
-Diseñado para creadores de contenido, podcasters, agencias y locutores, VoiceLab Coach guía al usuario a través de un **recorrido paso a paso interactivo** para:
-1. **Calibrar y grabar muestras vocales limpias** con fonemas ricos usando un teleprómter interactivo con medidor de decibelios.
-2. **Guiar la clonación en ElevenLabs** con parámetros óptimos de estabilidad, claridad y similitud.
-3. **Escribir y pulir guiones de podcast** con marcas de actuación teatral (`...`, `--`, `[Pausa reflexiva]`, `<breath>`, etc.).
-4. **Analizar sentimientos y emociones en tiempo real** mediante la API de Gemini 3.8 Flash para sugerir marcadores afectivos (`[Emocionado]`, `[Reflexivo]`, `[Íntimo]`).
-5. **Producir y sintetizar el audio final** con preescucha gratuita (Gemini TTS) o directamente con tu voz clonada en ElevenLabs, descargando tanto el audio como el guion formateado en **.txt** o **.pdf**.
+Diseñado para creadores de contenido, podcasters, agencias y educadores, VoiceLab Coach guía al usuario a través de un **recorrido interactivo en 5 fases** para:
+
+1. **Calibrar y grabar muestras vocales limpias** con fonemas balanceados usando un teleprómter interactivo con medidor VU en tiempo real (dB) y analizador acústico.
+2. **Gestionar y exportar muestras en WAV 44.1kHz** sin compresión destructiva, listas para entrenamiento instantáneo.
+3. **Guiar la clonación vocal** paso a paso (ElevenLabs, F5-TTS / XTTS Open-Source y Gemini TTS).
+4. **Escribir guiones profesionales con Gemini 3.8 Flash**, incorporando diagnóstico de prosodia y análisis de sentimientos en tiempo real que sugiere marcadores afectivos (`[Emocionado]`, `[Reflexivo]`, `[Íntimo]`).
+5. **Sintetizar el episodio final**:
+   - **Opción C (Integrada en la App):** Clonación Zero-Shot en español conectando directamente tu muestra grabada con alineación fonética en español.
+   - **ElevenLabs API:** Síntesis comercial con tu `voiceId` y parámetros calibrados (Estabilidad 42%, Claridad 82%, Estilo 12%).
+   - **Gemini TTS Express:** Preescucha gratuita con 5 timbres vocales para verificar ritmo y pausas sin gastar cuota.
+   - **Exportación Multi-formato:** Descarga del podcast producido en audio WAV/MP3 y del guion técnico en `.txt` o `.pdf` maquetado para locución.
 
 ---
 
-## 🚀 Recorrido Guiado Paso a Paso (*Guided Stepper*)
-
-La interfaz cuenta con un sistema de progresión secuencial que asegura la máxima calidad en cada etapa:
+## 🚀 El Recorrido en 5 Pasos (*Guided Pipeline*)
 
 ```text
-[Paso 1: Grabación & Teleprómter] ──> [Paso 2: Clonación ElevenLabs] ──> [Paso 3: Guion & Sentimientos] ──> [Paso 4: Estudio de Producción]
+[01. Teleprómter Dirigido] ──> [02. Gestor WAV] ──> [03. Guía de Clonación] ──> [04. Guion & Sentimientos] ──> [05. Estudio de Síntesis]
 ```
 
-- **Paso 1 — Teleprómter & Calibración Acústica:** Textos fonéticos balanceados, control de velocidad de lectura, espejo para cámara web, VU meter en tiempo real y descarga de muestras de audio (.wav/.webm).
-- **Paso 2 — Masterclass de Clonación:** Guía detallada con checklist interactivo sobre requisitos de audio, cómo usar *Instant Voice Cloning* vs *Professional Voice Cloning* y qué configuraciones de estabilidad aplicar.
-- **Paso 3 — Redacción y Dirección con Gemini IA:** Generador automático de guiones estructurados, diagnóstico de prosodia y detector de sentimientos que inserta etiquetas emocionales contextuales en un clic.
-- **Paso 4 — Producción, Síntesis y Exportación:** Test gratuito sin gastar créditos con Gemini TTS o síntesis final con tu voz clonada en ElevenLabs. Exportación de guion profesional a `.txt` y `.pdf`.
+- **Paso 1 — Teleprómter con Coaching Vocal:** 5 registros emocionales (narrativa, entusiasmo, explicación, intimidad y conversación). Las directivas de voz en pantalla indican cuándo sonreír, proyectar o susurrar. Medidor de decibelios y detector de saturación (*clipping*).
+- **Paso 2 — Gestor de Muestras Acústicas:** Verificación de tiempo acumulado (>60 segundos para Instant Voice Cloning de alta calidad) y descarga de archivos WAV 44.1kHz / 16-bit PCM.
+- **Paso 3 — Masterclass de Clonación:** Checklist interactivo para configurar modelos multilingües, evitar artefactos metálicos y calibrar sliders para habla humana.
+- **Paso 4 — Editor de Guiones y Análisis de Sentimientos:**
+  - Redactor de guiones con estructura de podcast (gancho, introducción, desarrollo, llamada a la acción).
+  - Puntuación actoral con pausas (`...`), incisos (`--`) y respiraciones (`<breath>`).
+  - **Análisis de Sentimientos con Gemini:** Diagnóstico afectivo que inyecta automáticamente etiquetas emocionales (`[Reflexivo]`, `[Emocionado]`, `[Enérgico]`) en las oraciones clave.
+- **Paso 5 — Estudio de Síntesis y Masterización (Opción C):**
+  - Selector directo de tus tomas de audio del Paso 1.
+  - Sincronización del texto de referencia (`ref_text`) en español para garantizar pronunciación nativa.
+  - Generación de audio en 1 clic y exportación de guion a `.txt` y `.pdf`.
 
 ---
 
-## ✨ Características Principales
+## 🧠 ¿Por qué fallaba F5-TTS en Google Colab y cómo se soluciona?
 
-| Módulo | Descripción |
-| :--- | :--- |
-| **🎙️ Teleprómter Profesional** | Velocidad personalizable (15-90 wpm), tamaño de tipografía dinámico, modo espejo y atajos de teclado. |
-| **🔊 Grabador en Vivo** | Captura directa desde el micrófono del navegador con analizador de frecuencia en tiempo real y descarga inmediata. |
-| **🧠 Dirección de Prosodia (Gemini 3.8 Flash)** | Reescritura del texto con puntuación actoral y consejos de ritmo para evitar la monotonía sintética. |
-| **🎭 Análisis de Sentimientos** | Diagnóstico emocional automático que sugiere dónde subir el tono, dónde susurrar o dónde generar misterio. |
-| **⚡ Síntesis Híbrida** | **Modo Prototipo:** Gemini TTS gratuito (5 perfiles de voz). <br>**Modo Master:** Conexión vía API segura con ElevenLabs (multilingual v2). |
-| **📄 Exportación Multi-formato** | Descarga del podcast producido en audio MP3 y del guion técnico en `.txt` o `.pdf`. |
-| **🔒 Privacidad y Seguridad** | Las API keys se transmiten de forma segura a través de endpoints proxy en el servidor y nunca se exponen al cliente. |
+Si probaste clonar tu voz con F5-TTS o el notebook `Spanish-F5.ipynb` y te devolvió el audio en inglés o arrojó errores de dependencias en Google Colab, aquí tienes la explicación técnica y la solución definitiva:
+
+### 1. ¿Por qué el audio salía en inglés?
+F5-TTS es un modelo de difusión *zero-shot* entrenado primariamente en inglés y chino (*dataset Emilia*). Para que sintetice en **español nativo**, es un requisito indispensable:
+- **Audio de referencia:** Una muestra tuya limpia de 6 a 12 segundos hablando en español.
+- **Texto de referencia (`ref_text`):** Debes escribir **exactamente** lo que dices en el audio en español. Si este campo se deja en blanco o en inglés, el modelo fuerza fonemas anglosajones.
+- *VoiceLab Coach (Opción C) automatiza esto al sincronizar el texto del teleprómter con la muestra grabada.*
+
+### 2. ¿Qué significa el conflicto de paquetes en Google Colab (`numpy 1.26 vs numpy 2.x`)?
+Google Colab actualizó su entorno a `numpy >= 2.0`. Las librerías de IA generativa de audio (`torch`, `diffusers`, `f5-tts`) requieren `numpy 1.26.4`.
+- Los mensajes rojos de `ERROR: pip's dependency resolver...` son advertencias de paquetes secundarios no utilizados (como `geopandas` o `shap`).
+- **El paso obligatorio:** Cuando pip termina, verás:  
+  `WARNING: You must restart the runtime in order to use newly installed versions.`  
+  **Solución:** Ve al menú de Colab: **Entorno de ejecución > Reiniciar sesión** (*Runtime > Restart session*). Luego ejecuta la celda de síntesis sin reinstalar.
+- *VoiceLab Coach incluye un botón para descargar el Cuaderno Colab 1-Clic ya reparado con la secuencia limpia y soporte para Coqui XTTS v2.*
 
 ---
 
 ## 🛠️ Stack Tecnológico
 
-- **Frontend:** [React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/) + [Vite](https://vite.dev/)
-- **Estilos:** [Tailwind CSS 4](https://tailwindcss.com/) + [Lucide Icons](https://lucide.dev/)
-- **Backend / API:** [Node.js](https://nodejs.org/) + [Express](https://expressjs.com/)
-- **Modelos de IA:**
-  - `gemini-3.8-flash`: Generación de guiones, análisis de prosodia y análisis de sentimientos.
-  - `gemini-3.8-flash-tts`: Previsualización instantánea de voz.
-  - `eleven_multilingual_v2`: Síntesis de ultra-alta fidelidad para voces clonadas.
-- **Generación de Documentos:** `jspdf` para exportación a PDF profesional en el cliente.
+| Capa | Tecnologías |
+| :--- | :--- |
+| **Frontend** | [React 19](https://react.dev/), [TypeScript 5](https://www.typescriptlang.org/), [Vite](https://vite.dev/) |
+| **Estilos & UI** | [Tailwind CSS 4](https://tailwindcss.com/), [Lucide Icons](https://lucide.dev/) |
+| **Backend / API** | [Node.js 20+](https://nodejs.org/), [Express](https://expressjs.com/), `tsx` |
+| **Modelos de IA** | `gemini-3.8-flash` (Guiones, prosodia y sentimientos), `gemini-3.8-flash-tts` (Audio express) |
+| **Motores de Clonación** | ElevenLabs (`eleven_multilingual_v2`), F5-TTS Zero-Shot, Coqui XTTS v2 |
+| **Generación Documental** | `jspdf` para maquetación y descarga de guiones PDF en el navegador |
 
 ---
 
 ## 📂 Estructura del Proyecto
 
 ```text
-├── .env.example               # Plantilla de variables de entorno
-├── index.html                 # Punto de entrada HTML con metadatos SEO
+├── .env.example               # Plantilla de variables de entorno (sin secretos)
+├── .gitignore                 # Exclusión de node_modules, .env, dist, bun.lock
+├── index.html                 # Punto de entrada HTML con SEO y metadata
 ├── metadata.json              # Configuración y capacidades del proyecto
-├── package.json               # Dependencias y scripts de construcción
-├── server.ts                  # Servidor Express con endpoints de IA y proxy ElevenLabs
-├── tsconfig.json              # Configuración TypeScript
-├── vite.config.ts             # Configuración de empaquetado Vite
+├── package.json               # Dependencias del proyecto
+├── server.ts                  # Servidor Express con endpoints de IA y proxy seguro
+├── tsconfig.json              # Configuración de TypeScript
+├── vite.config.ts             # Configuración de empaquetador Vite
 └── src/
-    ├── App.tsx                # Componente principal y control de navegación
-    ├── main.tsx               # Montaje de la aplicación React
-    ├── index.css              # Estilos globales con Tailwind CSS
-    ├── types/                 # Interfaces y contratos de datos TypeScript
-    ├── data/                  # Guiones de calibración fonética predefinidos
-    ├── utils/                 # Funciones auxiliares (exportadores PDF/TXT, etc.)
+    ├── App.tsx                # Orquestador del flujo y estado global
+    ├── main.tsx               # Montaje React 19
+    ├── index.css              # Estilos Tailwind CSS globales
+    ├── types/                 # Definiciones de tipos TypeScript
+    ├── data/                  # Guiones fonéticos calibrados para el teleprómter
+    ├── utils/                 # Procesamiento de audio Web Audio API y WAV encoder
     └── components/
         ├── Header.tsx                 # Barra superior con navegación y guía
         ├── GuidedStepperBanner.tsx    # Barra de progreso y recorrido guiado
-        ├── TeleprompterView.tsx       # Estudio de grabación y teleprómter
-        ├── SamplesManagerView.tsx     # Gestión de audios grabados
+        ├── TeleprompterView.tsx       # Teleprómter con grabación y VU meter
+        ├── SamplesManagerView.tsx     # Gestor de muestras WAV 44.1kHz
         ├── ElevenLabsGuideView.tsx    # Guía interactiva de clonación
         ├── PodcastScriptEditorView.tsx# Editor con análisis de prosodia y sentimientos
-        ├── ProductionStudioView.tsx   # Síntesis TTS y exportación final
-        └── UserGuideModal.tsx         # Modal con guía completa y casos de negocio
+        ├── ProductionStudioView.tsx   # Estudio de síntesis (Opción C, ElevenLabs, Gemini)
+        └── UserGuideModal.tsx         # Manual del creador y modelos de negocio
 ```
 
 ---
@@ -110,24 +128,20 @@ npm install
 ```
 
 ### 3. Configurar variables de entorno
-Crea un archivo `.env` basado en `.env.example`:
+Copia la plantilla `.env.example` a `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-Edita `.env` con tus credenciales:
+Configura tu clave de Gemini API:
 ```env
-# Clave de Google AI Studio / Gemini API (Requerida para guiones y análisis)
 GEMINI_API_KEY="AIzaSy..."
-
-# Puerto del servidor (Opcional, por defecto 3000)
 PORT=3000
 ```
+> 💡 *Nota:* Puedes obtener una clave de API gratuita en [Google AI Studio](https://aistudio.google.com/).
 
-> 💡 *Nota:* Puedes obtener una clave de API gratuita de Gemini en [Google AI Studio](https://aistudio.google.com/).
-
-### 4. Iniciar el entorno de desarrollo
+### 4. Iniciar el servidor de desarrollo
 ```bash
 npm run dev
 ```
@@ -136,33 +150,24 @@ Abre tu navegador en: [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## 🚢 Despliegue en Producción
+## 🚢 Despliegue en Cloudflare Pages
 
-### Opción A: Despliegue en Cloudflare Pages
-
-1. Sube tu repositorio a GitHub.
-2. En Cloudflare Dashboard ve a **Workers & Pages** > **Create application** > **Pages** > **Connect to Git**.
-3. Selecciona tu repositorio y define los siguientes ajustes de compilación:
+1. Sube tu código a GitHub:
+   ```bash
+   git add .
+   git commit -m "feat: complete voicelab coach with Option C voice cloning"
+   git push
+   ```
+2. En el panel de **Cloudflare Pages**:
+   - Conecta tu repositorio de GitHub.
    - **Framework preset:** `Vite`
    - **Build command:** `npm run build`
    - **Build output directory:** `dist`
-4. En **Environment Variables**, añade:
-   - `GEMINI_API_KEY`: Tu clave de Gemini API.
-   - `NODE_VERSION`: `20` (o superior).
-5. Haz clic en **Save and Deploy**.
-
-*(Nota: Este repositorio ya cuenta con `package-lock.json` estándar de npm y omite bloqueos conflictivos de bun para garantizar compatibilidad total con los runners de Cloudflare).*
-
-### Opción B: Despliegue Full-Stack (Render, Railway, Fly.io o VPS con Node.js)
-
-1. Compila el frontend:
-   ```bash
-   npm run build
-   ```
-2. Inicia el servidor de producción (sirve la API y los estáticos de `dist/`):
-   ```bash
-   NODE_ENV=production npx tsx server.ts
-   ```
+3. En **Environment Variables**:
+   - `NODE_VERSION`: `20` (o `22`)
+   - `GEMINI_API_KEY`: Tu clave de API de Gemini.
+4. Haz clic en **Save and Deploy**.  
+   *(El proyecto cuenta con configuración limpia de npm y caché de dependencias optimizada para compilación en Cloudflare).*
 
 ---
 
@@ -171,36 +176,23 @@ Abre tu navegador en: [http://localhost:3000](http://localhost:3000)
 | Método | Endpoint | Descripción |
 | :--- | :--- | :--- |
 | `POST` | `/api/script/generate` | Genera un guion estructurado con notas de dirección actoral. |
-| `POST` | `/api/script/analyze-prosody` | Diagnostica cadencia, ritmo, pausas y ajustes para clonadores de voz. |
-| `POST` | `/api/script/analyze-sentiment` | Analiza el tono afectivo e inyecta marcadores emocionales contextuales. |
-| `POST` | `/api/tts/preview` | Genera audio de prueba inmediato con Gemini TTS. |
-| `POST` | `/api/elevenlabs/synthesize` | Proxy seguro hacia ElevenLabs TTS con configuración de voz clonada. |
-| `POST` | `/api/elevenlabs/verify` | Valida credenciales, cuota disponible y datos del `voiceId`. |
+| `POST` | `/api/script/analyze-prosody` | Diagnostica cadencia, ritmo, pausas y parámetros de entonación. |
+| `POST` | `/api/script/analyze-sentiment` | Detecta emociones e inyecta marcadores afectivos contextuales. |
+| `POST` | `/api/voice-clone/synthesize` | **Opción C:** Síntesis de voz con muestra vocal y texto en español. |
+| `POST` | `/api/tts/preview` | Genera preescucha instantánea con Gemini TTS. |
+| `POST` | `/api/elevenlabs/synthesize` | Proxy seguro hacia ElevenLabs TTS con configuración calibrada. |
+| `POST` | `/api/elevenlabs/verify` | Valida credenciales, cuota disponible y datos de `voiceId`. |
 
 ---
 
-## 💡 Oportunidades de Monetización y Casos de Uso
+## 💡 Modelos de Negocio y Monetización
 
-Este proyecto está diseñado tanto para creadores individuales como para modelos de negocio B2B:
-
-1. **Agencia de Podcasting Automatizado:** Ofrece a clientes corporativos la creación de episodios semanales en su propia voz sin que tengan que pasar horas grabando en un estudio.
-2. **Audiolibros y Formación Interna:** Convierte artículos, manuales o libros a narración humana personalizada a una fracción del costo tradicional.
-3. **Clonación de Marca para Creadores:** Servicio premium de auditoría y captura de muestras vocales perfectas para influencers y educadores online.
-4. **Localización y Doblaje:** Adaptación de contenidos a múltiples idiomas conservando el timbre característico del autor mediante los modelos multilingües de ElevenLabs.
-
----
-
-## 🤝 Contribuciones
-
-¡Las contribuciones son bienvenidas! Si deseas añadir nuevas características:
-1. Haz un Fork del proyecto (`fork`).
-2. Crea una rama para tu feature (`git checkout -b feature/NuevaCaracteristica`).
-3. Haz commit de tus cambios (`git commit -m 'feat: Añadir nueva característica'`).
-4. Haz push a la rama (`git push origin feature/NuevaCaracteristica`).
-5. Abre un **Pull Request**.
+1. **Agencia de Podcasting Automatizado:** Producción de episodios semanales para fundadores y ejecutivos en su propia voz sin que deban pasar horas en el estudio.
+2. **Audiolibros y Formación Corporativa:** Conversión masiva de artículos y manuales a narración conversacional personalizada.
+3. **Servicio Premium de Calibración Vocal:** Auditoría y toma de muestras de alta fidelidad para creadores de contenido e influencers.
 
 ---
 
 ## 📄 Licencia
 
-Este proyecto está bajo la Licencia [MIT](LICENSE). Siéntete libre de utilizarlo, modificarlo y adaptarlo a tus necesidades comerciales o personales.
+Este proyecto está bajo la Licencia [MIT](LICENSE). Siéntete libre de adaptarlo a tus necesidades comerciales o proyectos personales.

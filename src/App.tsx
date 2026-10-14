@@ -186,6 +186,7 @@ Quédate conmigo, porque hoy vamos a desgranar paso a paso cómo lograrlo sin co
           <ProductionStudioView
             scriptText={currentScriptText}
             scriptTitle={scriptTitle}
+            samples={samples}
             onGoToEditor={() => setActiveTab('editor')}
           />
         )}

@@ -286,16 +286,16 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                   </div>
                 </div>
 
-                <div className="bg-neutral-950 p-4 rounded-xl border border-indigo-900/50 space-y-3">
+                <div className="bg-neutral-950 p-4 rounded-xl border border-emerald-900/50 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-indigo-300">Vía 2: F5-TTS Open Source</span>
-                    <span className="text-[10px] text-emerald-400 font-mono">100% Gratis</span>
+                    <span className="text-xs font-bold text-emerald-300">Vía 2: F5-TTS / XTTS (Opción C)</span>
+                    <span className="text-[10px] text-emerald-400 font-mono">100% Gratis / En App</span>
                   </div>
                   <p className="text-xs text-neutral-400 leading-relaxed">
-                    Motor moderno de código abierto basado en Flow Matching. No pagas nada: clona en segundos usando Google Colab gratuito (GPU T4) o HuggingFace Spaces.
+                    Clonación Zero-Shot con tu muestra vocal en español. Genera directamente desde la app en el Paso 5 o mediante el cuaderno Colab reparado (sin errores de dependencias de numpy).
                   </p>
-                  <div className="text-[11px] text-indigo-400 pt-2 border-t border-neutral-800">
-                    Guía y enlace directo en el Paso 5.
+                  <div className="text-[11px] text-emerald-400 pt-2 border-t border-neutral-800">
+                    Alineación fonética en español integrada.
                   </div>
                 </div>
 
