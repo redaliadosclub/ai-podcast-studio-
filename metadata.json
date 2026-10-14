@@ -1,0 +1,6 @@
+{
+  "name": "VoiceLab Coach - Estudio de Clonación de Voz",
+  "description": "Director vocal y estudio interactivo para clonar tu voz con entonación natural y generar podcasts en ElevenLabs.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
