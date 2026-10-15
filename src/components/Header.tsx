@@ -82,7 +82,23 @@ export const Header: React.FC<HeaderProps> = ({
                 : 'text-neutral-600 cursor-not-allowed'
             }`}
           >
-            <span>03. Motor & Prosodia</span>
+            <span>03. Calibración</span>
+            {!isTabUnlocked(3) && <Lock className="w-3 h-3 text-neutral-600" />}
+          </button>
+
+          {/* Tab: F5-TTS In-App Voice Cloning (Option C) */}
+          <button
+            onClick={() => isTabUnlocked(3) && setActiveTab('cloning')}
+            disabled={!isTabUnlocked(3)}
+            className={`whitespace-nowrap shrink-0 transition-colors py-1 flex items-center gap-1.5 ${
+              activeTab === 'cloning'
+                ? 'text-white border-b-2 border-indigo-500'
+                : isTabUnlocked(3)
+                ? 'text-neutral-400 hover:text-neutral-200'
+                : 'text-neutral-600 cursor-not-allowed'
+            }`}
+          >
+            <span className="text-indigo-400 font-semibold">⚡ F5-TTS Clonador</span>
             {!isTabUnlocked(3) && <Lock className="w-3 h-3 text-neutral-600" />}
           </button>
 

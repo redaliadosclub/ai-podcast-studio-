@@ -4,6 +4,7 @@ import { GuidedStepperBanner } from './components/GuidedStepperBanner';
 import { TeleprompterView } from './components/TeleprompterView';
 import { SamplesManagerView } from './components/SamplesManagerView';
 import { ElevenLabsGuideView } from './components/ElevenLabsGuideView';
+import { VoiceCloningOptionView } from './components/VoiceCloningOptionView';
 import { PodcastScriptEditorView } from './components/PodcastScriptEditorView';
 import { ProductionStudioView } from './components/ProductionStudioView';
 import { UserGuideModal } from './components/UserGuideModal';
@@ -164,11 +165,30 @@ Quédate conmigo, porque hoy vamos a desgranar paso a paso cómo lograrlo sin co
             onDeleteSample={handleDeleteSample}
             onGoToTeleprompter={() => setActiveTab('teleprompter')}
             onGoToGuide={handleConfirmStep2}
+            onGoToCloning={() => {
+              setStep2Confirmed(true);
+              setUnlockedStepMax((prev) => Math.max(prev, 3));
+              setActiveTab('cloning');
+            }}
           />
         )}
 
         {activeTab === 'guide' && (
           <ElevenLabsGuideView
+            onGoToTeleprompter={() => setActiveTab('teleprompter')}
+            onGoToEditor={handleConfirmStep3}
+            onGoToCloning={() => {
+              setUnlockedStepMax((prev) => Math.max(prev, 3));
+              setActiveTab('cloning');
+            }}
+          />
+        )}
+
+        {activeTab === 'cloning' && (
+          <VoiceCloningOptionView
+            samples={samples}
+            currentScriptText={currentScriptText}
+            onSendToProduction={handleSendToProduction}
             onGoToTeleprompter={() => setActiveTab('teleprompter')}
             onGoToEditor={handleConfirmStep3}
           />

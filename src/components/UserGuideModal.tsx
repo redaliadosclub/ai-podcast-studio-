@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { X, BookOpen, Sparkles, DollarSign, Mic, Compass, CheckCircle2, ChevronRight, Zap } from 'lucide-react';
 
+import { StudioStepId } from '../types';
+
 interface UserGuideModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onGoToStep: (step: 'teleprompter' | 'samples' | 'guide' | 'editor' | 'production') => void;
+  onGoToStep: (step: StudioStepId) => void;
 }
 
 export const UserGuideModal: React.FC<UserGuideModalProps> = ({

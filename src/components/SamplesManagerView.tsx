@@ -7,6 +7,7 @@ interface SamplesManagerViewProps {
   onDeleteSample: (id: string) => void;
   onGoToTeleprompter: () => void;
   onGoToGuide: () => void;
+  onGoToCloning?: () => void;
 }
 
 export const SamplesManagerView: React.FC<SamplesManagerViewProps> = ({
@@ -14,6 +15,7 @@ export const SamplesManagerView: React.FC<SamplesManagerViewProps> = ({
   onDeleteSample,
   onGoToTeleprompter,
   onGoToGuide,
+  onGoToCloning,
 }) => {
   const totalDuration = samples.reduce((acc, curr) => acc + curr.durationSec, 0);
   const minutes = Math.floor(totalDuration / 60);
@@ -86,6 +88,14 @@ export const SamplesManagerView: React.FC<SamplesManagerViewProps> = ({
             >
               + Grabar Otra Muestra
             </button>
+            {onGoToCloning && (
+              <button
+                onClick={onGoToCloning}
+                className="text-xs font-semibold text-indigo-300 hover:text-white bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-700/60 px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                <span>⚡ Clonar con F5-TTS In-App</span>
+              </button>
+            )}
             <button
               onClick={onGoToGuide}
               className="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg transition-colors flex items-center gap-2 shadow-sm"

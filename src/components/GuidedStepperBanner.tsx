@@ -71,7 +71,17 @@ export const GuidedStepperBanner: React.FC<GuidedStepperBannerProps> = ({
   hasValidScript,
   hasGeneratedAudio,
 }) => {
-  const currentStepObj = STUDIO_STEPS.find((s) => s.id === currentStep) || STUDIO_STEPS[0];
+  const currentStepObj =
+    currentStep === 'cloning'
+      ? {
+          id: 'cloning' as StudioStepId,
+          stepNumber: 3,
+          label: 'Clonación F5-TTS In-App (Opción C)',
+          shortTitle: 'F5-TTS',
+          description: 'Flujo de clonación directa por Flow Matching sin salir de la app ni registros externos.',
+          requirementToUnlockNext: 'Genera tu audio clonado y continúa al guion.',
+        }
+      : STUDIO_STEPS.find((s) => s.id === currentStep) || STUDIO_STEPS[0];
   const progressPercent = Math.round(((Math.min(unlockedStepMax, 5) - 1) / 4) * 100);
 
   // Determine if a specific step is completed
@@ -142,7 +152,7 @@ export const GuidedStepperBanner: React.FC<GuidedStepperBannerProps> = ({
       {/* 5-Step Visual Stepper Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
         {STUDIO_STEPS.map((step) => {
-          const isCurrent = step.id === currentStep;
+          const isCurrent = step.id === currentStep || (step.id === 'guide' && currentStep === 'cloning');
           const isDone = isStepDone(step.stepNumber);
           const isUnlocked = !isGuidedMode || step.stepNumber <= unlockedStepMax;
 

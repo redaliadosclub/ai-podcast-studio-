@@ -5,7 +5,7 @@ export type VocalRegister =
   | 'intimate'
   | 'conversational';
 
-export type StudioStepId = 'teleprompter' | 'samples' | 'guide' | 'editor' | 'production';
+export type StudioStepId = 'teleprompter' | 'samples' | 'guide' | 'cloning' | 'editor' | 'production';
 
 export interface StudioStepInfo {
   id: StudioStepId;
