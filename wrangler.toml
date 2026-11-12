@@ -1,6 +1,8 @@
 name = "viewer-360-ecommerce"
 compatibility_date = "2024-09-23"
 
+main = "src/worker.ts"
+
 # Directorio de archivos estáticos (SPA compilada por Vite)
 [assets]
 directory = "./dist"

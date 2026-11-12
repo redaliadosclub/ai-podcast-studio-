@@ -292,6 +292,9 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
       }
 
       if (!res.ok) {
+        if (res.status === 405) {
+          throw new Error('Error 405: El servidor donde está alojada la app rechazó la petición POST. Si estás en tu despliegue de Cloudflare, redespliega para que incluya el nuevo script worker (`main = "src/worker.ts"`), o prueba la generación en el entorno de desarrollo de AI Studio.');
+        }
         throw new Error(data.error || `Error durante la síntesis (${res.status}).`);
       }
 
