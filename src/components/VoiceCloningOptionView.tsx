@@ -195,6 +195,7 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
       return;
     }
 
+    setSourceType('upload');
     setUploadedFileName(file.name);
     const url = URL.createObjectURL(file);
     setUploadedBlobUrl(url);
@@ -205,6 +206,9 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
       const base64 = res.split(',')[1];
       setUploadedBase64(base64);
       setErrorMessage(null);
+    };
+    reader.onerror = () => {
+      setErrorMessage('Error al leer el archivo de audio local.');
     };
     reader.readAsDataURL(file);
   };
@@ -238,6 +242,11 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    if (sourceType === 'upload' && !uploadedBlobUrl) {
+      setErrorMessage('Por favor selecciona y sube primero un archivo de audio (WAV o MP3) de tu voz.');
+      return;
+    }
+
     if (!targetText.trim()) {
       setErrorMessage('Ingresa o selecciona el texto que deseas que pronuncie tu voz clonada.');
       return;
@@ -268,9 +277,22 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const responseText = await res.text();
+      let data: any = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        if (!res.ok) {
+          if (res.status === 413) {
+            throw new Error('El archivo de audio de referencia supera el límite de tamaño. Usa una muestra de 15 a 30 segundos (WAV/MP3).');
+          }
+          throw new Error(`El servidor respondió con código ${res.status}.`);
+        }
+        throw new Error('Respuesta no válida del motor de voz. Por favor reintenta la síntesis.');
+      }
+
       if (!res.ok) {
-        throw new Error(data.error || 'Ocurrió un error durante la síntesis.');
+        throw new Error(data.error || `Error durante la síntesis (${res.status}).`);
       }
 
       if (data.audioBase64) {

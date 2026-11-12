@@ -13,7 +13,8 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
-app.use(express.json({ limit: '15mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Initialize Gemini API client on the server side
 const ai = new GoogleGenAI({
@@ -411,32 +412,57 @@ app.post('/api/voice-clone/synthesize', async (req: Request, res: Response) => {
 
     // Mode 2: Native High-Fidelity Neural Synthesis (Default / Immediate in-app testing)
     // Uses Google Gemini Audio with conversational podcast host prosody
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash-tts',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: cleanScript,
-              speechMetadata: {
-                style: 'Natural Spanish conversational podcast narrator with deep, warm and engaging prosody',
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash-tts',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: cleanScript,
               },
-            },
-          ],
-        },
-      ],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: 'Charon',
+            ],
+          },
+        ],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: 'Charon',
+              },
             },
           },
         },
-      },
-    });
+      });
+    } catch (ttsErr: any) {
+      console.warn('Fallback a gemini-3.8-flash-lite-tts:', ttsErr?.message);
+      response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash-lite-tts',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: cleanScript,
+              },
+            ],
+          },
+        ],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: 'Charon',
+              },
+            },
+          },
+        },
+      });
+    }
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
