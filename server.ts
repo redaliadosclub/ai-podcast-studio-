@@ -235,7 +235,20 @@ app.post('/api/tts/preview', async (req: Request, res: Response) => {
       mimeType: 'audio/wav',
     });
   } catch (error: any) {
-    console.error('Error generating preview TTS:', error);
+    console.error('Error generating preview TTS:', error?.message);
+    const isQuota =
+      error?.status === 429 ||
+      error?.message?.includes('429') ||
+      error?.message?.includes('quota') ||
+      error?.message?.includes('RESOURCE_EXHAUSTED');
+
+    if (isQuota) {
+      return res.status(429).json({
+        quotaExceeded: true,
+        error:
+          'Se alcanzó el límite diario gratuito de Gemini TTS (10 peticiones/día). Puedes usar el lector del navegador o tu cuenta de ElevenLabs.',
+      });
+    }
     return res.status(500).json({ error: 'Error en síntesis de prueba: ' + error.message });
   }
 });
@@ -449,6 +462,20 @@ app.post('/api/voice-clone/synthesize', async (req: Request, res: Response) => {
         },
       });
     } catch (ttsErr: any) {
+      const isQuota =
+        ttsErr?.status === 429 ||
+        ttsErr?.message?.includes('429') ||
+        ttsErr?.message?.includes('quota') ||
+        ttsErr?.message?.includes('RESOURCE_EXHAUSTED');
+
+      if (isQuota) {
+        return res.status(429).json({
+          quotaExceeded: true,
+          error:
+            'Has alcanzado la cuota diaria gratuita de 10 peticiones de Gemini TTS (Free Tier). Para síntesis ilimitada y clonación real 1:1, usa ElevenLabs en la pestaña Master Final, o usa la preescucha del navegador.',
+        });
+      }
+
       console.warn('Fallback a gemini-3.8-flash-lite-tts:', ttsErr?.message);
       response = await ai.models.generateContent({
         model: 'gemini-3.8-flash-lite-tts',
@@ -488,7 +515,21 @@ app.post('/api/voice-clone/synthesize', async (req: Request, res: Response) => {
       message: 'Audio sintetizado con éxito utilizando el motor neural en español optimizado.',
     });
   } catch (error: any) {
-    console.error('Error en síntesis de voz clonada:', error);
+    const isQuota =
+      error?.status === 429 ||
+      error?.message?.includes('429') ||
+      error?.message?.includes('quota') ||
+      error?.message?.includes('RESOURCE_EXHAUSTED');
+
+    if (isQuota) {
+      return res.status(429).json({
+        quotaExceeded: true,
+        error:
+          'Has alcanzado la cuota diaria gratuita de 10 peticiones de Gemini TTS. Puedes continuar creando tus guiones y usar ElevenLabs o el reproductor del navegador.',
+      });
+    }
+
+    console.error('Error en síntesis de voz clonada:', error?.message);
     return res.status(500).json({
       error: 'Error en la clonación de voz: ' + (error?.message || 'Error desconocido'),
     });

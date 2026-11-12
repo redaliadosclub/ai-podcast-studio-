@@ -79,9 +79,13 @@ export default {
 
         if (!geminiRes.ok) {
           const errText = await geminiRes.text();
+          const isQuota = geminiRes.status === 429 || errText.includes('RESOURCE_EXHAUSTED') || errText.includes('quota');
+          const errMsg = isQuota
+            ? 'Límite de cuota gratuita diaria alcanzado en Gemini TTS (10 peticiones/día). Usa la preescucha del navegador o ElevenLabs.'
+            : `Error de Gemini (${geminiRes.status}): ${errText.slice(0, 150)}`;
           return new Response(
-            JSON.stringify({ error: `Error de Gemini (${geminiRes.status}): ${errText.slice(0, 150)}` }),
-            { status: geminiRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
+            JSON.stringify({ error: errMsg, quotaExceeded: isQuota }),
+            { status: isQuota ? 429 : geminiRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
           );
         }
 

@@ -264,9 +264,24 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
           }),
         });
 
-        const data = await res.json();
+        const responseText = await res.text();
+        let data: any = {};
+        try {
+          data = responseText ? JSON.parse(responseText) : {};
+        } catch {
+          if (!res.ok) {
+            throw new Error(`Error en el servidor (${res.status}).`);
+          }
+        }
+
         if (!res.ok) {
-          throw new Error(data.error || 'Error en la clonación de voz.');
+          if (res.status === 429 || data.quotaExceeded) {
+            throw new Error(
+              data.error ||
+                'Se alcanzó el límite diario gratuito de Gemini TTS (10 peticiones/día). Te recomendamos seleccionar el motor ElevenLabs arriba para clonar tu voz real sin límites.'
+            );
+          }
+          throw new Error(data.error || 'Error en la síntesis de voz.');
         }
 
         const audioBlob = b64toBlob(data.audioBase64, data.mimeType || 'audio/wav');

@@ -86,6 +86,8 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
 
   // Synthesis state
   const [isSynthesizing, setIsSynthesizing] = useState<boolean>(false);
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState<boolean>(false);
+  const [isBrowserSpeaking, setIsBrowserSpeaking] = useState<boolean>(false);
   const [clonedAudioUrl, setClonedAudioUrl] = useState<string | null>(null);
   const [clonedAudioBlob, setClonedAudioBlob] = useState<Blob | null>(null);
   const [audioDuration, setAudioDuration] = useState<number>(0);
@@ -292,8 +294,17 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
       }
 
       if (!res.ok) {
+        if (res.status === 429 || data.quotaExceeded) {
+          setIsQuotaExceeded(true);
+          throw new Error(
+            data.error ||
+              'Límite de cuota gratuita diaria alcanzado en Gemini TTS (10 peticiones/día). Puedes escuchar ahora con el lector del navegador o conectar tu API Key de ElevenLabs para clonación real.'
+          );
+        }
         if (res.status === 405) {
-          throw new Error('Error 405: El servidor donde está alojada la app rechazó la petición POST. Si estás en tu despliegue de Cloudflare, redespliega para que incluya el nuevo script worker (`main = "src/worker.ts"`), o prueba la generación en el entorno de desarrollo de AI Studio.');
+          throw new Error(
+            'Error 405: El servidor rechazó la petición POST. Prueba en la vista previa de AI Studio o redespliega tu worker en Cloudflare.'
+          );
         }
         throw new Error(data.error || `Error durante la síntesis (${res.status}).`);
       }
@@ -311,7 +322,8 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
         const newUrl = URL.createObjectURL(blob);
         setClonedAudioUrl(newUrl);
         setClonedAudioBlob(blob);
-        setSuccessMessage('¡Audio clonado generado con éxito! Escucha el resultado a continuación.');
+        setIsQuotaExceeded(false);
+        setSuccessMessage('¡Audio generado con éxito! Escucha el resultado a continuación.');
       } else {
         throw new Error('No se recibió audio válido del motor de clonación.');
       }
@@ -319,6 +331,49 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
       setErrorMessage(err.message || 'Error al conectar con el motor de clonación.');
     } finally {
       setIsSynthesizing(false);
+    }
+  };
+
+  const handlePlayBrowserSpeech = () => {
+    if (!('speechSynthesis' in window)) {
+      setErrorMessage('Tu navegador no soporta síntesis de voz nativa.');
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const clean = targetText.replace(/\[[^\]]+\]/g, '').trim();
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.lang = 'es-ES';
+    utterance.rate = voiceSpeed;
+
+    const voices = window.speechSynthesis.getVoices();
+    const spanishVoice =
+      voices.find(
+        (v) =>
+          v.lang.startsWith('es') &&
+          (v.name.includes('Natural') ||
+            v.name.includes('Google') ||
+            v.name.includes('Pablo') ||
+            v.name.includes('Jorge') ||
+            v.name.includes('Elena') ||
+            v.name.includes('Monica'))
+      ) || voices.find((v) => v.lang.startsWith('es'));
+
+    if (spanishVoice) {
+      utterance.voice = spanishVoice;
+    }
+
+    utterance.onstart = () => setIsBrowserSpeaking(true);
+    utterance.onend = () => setIsBrowserSpeaking(false);
+    utterance.onerror = () => setIsBrowserSpeaking(false);
+
+    window.speechSynthesis.speak(utterance);
+    setSuccessMessage('Reproduciendo texto con el sintetizador nativo de tu navegador.');
+  };
+
+  const handleStopBrowserSpeech = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsBrowserSpeaking(false);
     }
   };
 
@@ -757,8 +812,43 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
               </div>
             </div>
 
+            {/* Quota Exceeded Notification & Browser TTS Fallback */}
+            {isQuotaExceeded && (
+              <div className="p-4 bg-amber-950/40 border border-amber-600/50 rounded-xl space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-xs font-bold text-amber-200">
+                      Límite diario alcanzado en Gemini TTS (10 peticiones/día)
+                    </h4>
+                    <p className="text-[11px] text-neutral-300 mt-1 leading-relaxed">
+                      El plan gratuito de Google limita las peticiones diarias de voz sintética. Para no frenar tu trabajo, puedes escuchar la locución inmediatamente con el motor de voz de tu navegador o usar ElevenLabs para clonación real:
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={isBrowserSpeaking ? handleStopBrowserSpeech : handlePlayBrowserSpeech}
+                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-xs text-white rounded-lg border border-neutral-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>{isBrowserSpeaking ? 'Detener Voz' : '🔊 Escuchar con el Navegador (Sin límite)'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onGoToEditor}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-xs text-white rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <span>Ir a Guion & ElevenLabs</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Error or Success feedback */}
-            {errorMessage && (
+            {errorMessage && !isQuotaExceeded && (
               <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-lg text-xs text-red-300 flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                 <span>{errorMessage}</span>
