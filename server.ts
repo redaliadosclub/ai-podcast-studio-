@@ -1,4 +1,5 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -10,14 +11,121 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
+
+// Latest Google AI Studio models prioritized, with automatic production fallbacks
+// in case an external Render API key lacks preview model access.
+const TEXT_MODEL_PRIORITY = ['gemini-4-hydrogen', 'gemini-flash-latest', 'gemini-3.1-flash-lite'] as const;
+const TTS_MODEL_PRIORITY = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts'] as const;
+
+function isQuotaError(error: any): boolean {
+  const msg = String(error?.message || '');
+  return (
+    error?.status === 429 ||
+    msg.includes('429') ||
+    msg.toLowerCase().includes('quota') ||
+    msg.includes('RESOURCE_EXHAUSTED')
+  );
+}
+
+function shouldFallbackModel(error: any): boolean {
+  if (isQuotaError(error)) return false;
+  const status = error?.status;
+  const msg = String(error?.message || '').toLowerCase();
+  return (
+    status === 404 ||
+    status === 403 ||
+    status === 400 ||
+    msg.includes('not found') ||
+    msg.includes('not supported') ||
+    msg.includes('permission') ||
+    msg.includes('access') ||
+    msg.includes('deprecated') ||
+    msg.includes('unknown model')
+  );
+}
+
+async function generateTextWithFallback(params: {
+  contents: string;
+  systemInstruction: string;
+  responseMimeType?: string;
+}) {
+  let lastError: any;
+  for (let i = 0; i < TEXT_MODEL_PRIORITY.length; i++) {
+    const model = TEXT_MODEL_PRIORITY[i];
+    try {
+      return await ai.models.generateContent({
+        model,
+        contents: params.contents,
+        config: {
+          systemInstruction: params.systemInstruction,
+          ...(params.responseMimeType ? { responseMimeType: params.responseMimeType } : {}),
+        },
+      });
+    } catch (error: any) {
+      lastError = error;
+      const hasNext = i < TEXT_MODEL_PRIORITY.length - 1;
+      if (hasNext && shouldFallbackModel(error)) {
+        console.warn(`Modelo ${model} no disponible para esta clave, usando respaldo automático:`, error?.message);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
+async function generateTtsWithFallback(params: {
+  text: string;
+  voiceName: 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr';
+  style?: string;
+}) {
+  let lastError: any;
+  for (let i = 0; i < TTS_MODEL_PRIORITY.length; i++) {
+    const model = TTS_MODEL_PRIORITY[i];
+    const part: Record<string, any> = { text: params.text };
+    if (i === 0 && params.style) {
+      part.speechMetadata = { style: params.style };
+    }
+    try {
+      return await ai.models.generateContent({
+        model,
+        contents: [
+          {
+            role: 'user',
+            parts: [part],
+          },
+        ],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: params.voiceName,
+              },
+            },
+          },
+        },
+      });
+    } catch (error: any) {
+      lastError = error;
+      const hasNext = i < TTS_MODEL_PRIORITY.length - 1;
+      if (hasNext && shouldFallbackModel(error)) {
+        console.warn(`Modelo TTS ${model} no disponible, usando respaldo automático:`, error?.message);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Enable CORS and handle preflight requests for all endpoints
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
@@ -25,6 +133,11 @@ app.use((req, res, next) => {
     return res.sendStatus(204);
   }
   next();
+});
+
+// Health Check Endpoint for Render & UptimeRobot
+app.get('/api/health', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok' });
 });
 
 // Initialize Gemini API client on the server side
@@ -79,13 +192,10 @@ Formato: ${format || 'Monólogo íntimo y divulgativo'}
 Nombre del locutor: ${hostName}
 Duración objetivo: aproximadamente ${durationMinutes} minutos.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const response = await generateTextWithFallback({
       contents: prompt,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-      },
+      systemInstruction,
+      responseMimeType: 'application/json',
     });
 
     const text = response.text || '{}';
@@ -124,13 +234,10 @@ Responde en formato JSON:
   }
 }`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const response = await generateTextWithFallback({
       contents: `Analiza y mejora este guion para locución natural:\n\n${scriptText}`,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-      },
+      systemInstruction,
+      responseMimeType: 'application/json',
     });
 
     const parsed = JSON.parse(response.text || '{}');
@@ -168,13 +275,10 @@ Debes devolver un objeto JSON con el siguiente esquema exacto:
   "scriptWithSuggestedMarkers": "El guion completo con los marcadores emocionales sugeridos integrados en las oraciones clave para sonar hipernatural."
 }`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const response = await generateTextWithFallback({
       contents: `Analiza el sentimiento y sugiere marcadores emocionales para este guion de podcast:\n\n${scriptText}`,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-      },
+      systemInstruction,
+      responseMimeType: 'application/json',
     });
 
     const parsed = JSON.parse(response.text || '{}');
@@ -197,31 +301,10 @@ app.post('/api/tts/preview', async (req: Request, res: Response) => {
     // Clean brackets or directing tags for standard TTS engine
     const cleanText = text.replace(/\[[^\]]+\]/g, '').trim();
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash-tts',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: cleanText,
-              speechMetadata: {
-                style,
-              },
-            },
-          ],
-        },
-      ],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: voiceName as 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr',
-            },
-          },
-        },
-      },
+    const response = await generateTtsWithFallback({
+      text: cleanText,
+      voiceName: voiceName as 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr',
+      style,
     });
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
@@ -236,13 +319,7 @@ app.post('/api/tts/preview', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error generating preview TTS:', error?.message);
-    const isQuota =
-      error?.status === 429 ||
-      error?.message?.includes('429') ||
-      error?.message?.includes('quota') ||
-      error?.message?.includes('RESOURCE_EXHAUSTED');
-
-    if (isQuota) {
+    if (isQuotaError(error)) {
       return res.status(429).json({
         quotaExceeded: true,
         error:
@@ -435,72 +512,12 @@ app.post('/api/voice-clone/synthesize', async (req: Request, res: Response) => {
     }
 
     // Mode 2: Native High-Fidelity Neural Synthesis (Default / Immediate in-app testing)
-    // Uses Google Gemini Audio with conversational podcast host prosody
-    let response;
-    try {
-      response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash-tts',
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: cleanScript,
-              },
-            ],
-          },
-        ],
-        config: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: 'Charon',
-              },
-            },
-          },
-        },
-      });
-    } catch (ttsErr: any) {
-      const isQuota =
-        ttsErr?.status === 429 ||
-        ttsErr?.message?.includes('429') ||
-        ttsErr?.message?.includes('quota') ||
-        ttsErr?.message?.includes('RESOURCE_EXHAUSTED');
-
-      if (isQuota) {
-        return res.status(429).json({
-          quotaExceeded: true,
-          error:
-            'Has alcanzado la cuota diaria gratuita de 10 peticiones de Gemini TTS (Free Tier). Para síntesis ilimitada y clonación real 1:1, usa ElevenLabs en la pestaña Master Final, o usa la preescucha del navegador.',
-        });
-      }
-
-      console.warn('Fallback a gemini-3.8-flash-lite-tts:', ttsErr?.message);
-      response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash-lite-tts',
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: cleanScript,
-              },
-            ],
-          },
-        ],
-        config: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: 'Charon',
-              },
-            },
-          },
-        },
-      });
-    }
+    // Uses Google Gemini Audio with conversational podcast host prosody + automatic fallback
+    const response = await generateTtsWithFallback({
+      text: cleanScript,
+      voiceName: 'Charon',
+      style: 'Natural Spanish conversational podcast narrator with deep, warm and engaging prosody',
+    });
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
@@ -515,13 +532,7 @@ app.post('/api/voice-clone/synthesize', async (req: Request, res: Response) => {
       message: 'Audio sintetizado con éxito utilizando el motor neural en español optimizado.',
     });
   } catch (error: any) {
-    const isQuota =
-      error?.status === 429 ||
-      error?.message?.includes('429') ||
-      error?.message?.includes('quota') ||
-      error?.message?.includes('RESOURCE_EXHAUSTED');
-
-    if (isQuota) {
+    if (isQuotaError(error)) {
       return res.status(429).json({
         quotaExceeded: true,
         error:
@@ -536,6 +547,11 @@ app.post('/api/voice-clone/synthesize', async (req: Request, res: Response) => {
   }
 });
 
+// Return JSON 404 for unknown /api/* routes so SPA fallback never intercepts API calls
+app.use('/api', (_req: Request, res: Response) => {
+  res.status(404).json({ error: 'Endpoint de API no encontrado.' });
+});
+
 // Setup Vite middleware in dev or static files in production
 async function startServer() {
   if (!isProduction) {
@@ -546,9 +562,13 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (_req: Request, res: Response) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+    const distPath = path.resolve(__dirname, 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req: Request, res: Response, next: NextFunction) => {
+      if (req.path.startsWith('/api')) {
+        return next();
+      }
+      return res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
