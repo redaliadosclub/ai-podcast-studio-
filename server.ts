@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
 dotenv.config();
 
@@ -17,9 +17,10 @@ const isProduction = process.env.NODE_ENV === 'production';
 // Latest Google AI Studio models prioritized, with fast per-attempt timeouts
 // so congested preview models fail over cleanly within the 60s frontend window.
 const TEXT_MODEL_CHAIN = [
-  { model: 'gemini-4-hydrogen', timeoutMs: 8000 },
-  { model: 'gemini-3.8-flash', timeoutMs: 15000 },
-  { model: 'gemini-flash-latest', timeoutMs: 25000 },
+  { model: 'gemini-4-hydrogen', timeoutMs: 8000, thinkingLevel: ThinkingLevel.LOW },
+  { model: 'gemini-3.8-flash', timeoutMs: 12000, thinkingLevel: ThinkingLevel.LOW },
+  { model: 'gemini-flash-latest', timeoutMs: 10000, thinkingLevel: undefined },
+  { model: 'gemini-3.1-flash-lite', timeoutMs: 25000, thinkingLevel: ThinkingLevel.MINIMAL },
 ] as const;
 
 const TTS_MODEL_CHAIN = [
@@ -106,10 +107,11 @@ async function generateTextWithFallback(params: {
   contents: string;
   systemInstruction: string;
   responseMimeType?: string;
+  responseSchema?: any;
 }) {
   let lastError: any;
   for (let i = 0; i < TEXT_MODEL_CHAIN.length; i++) {
-    const { model, timeoutMs } = TEXT_MODEL_CHAIN[i];
+    const { model, timeoutMs, thinkingLevel } = TEXT_MODEL_CHAIN[i];
     try {
       return await ai.models.generateContent({
         model,
@@ -117,7 +119,9 @@ async function generateTextWithFallback(params: {
         config: {
           systemInstruction: params.systemInstruction,
           abortSignal: AbortSignal.timeout(timeoutMs),
+          ...(thinkingLevel ? { thinkingConfig: { thinkingLevel } } : {}),
           ...(params.responseMimeType ? { responseMimeType: params.responseMimeType } : {}),
+          ...(params.responseSchema ? { responseSchema: params.responseSchema } : {}),
         },
       });
     } catch (error: any) {
@@ -248,8 +252,7 @@ Reglas esenciales para entonación orgánica:
    - "estimatedDuration": duración estimada (ej. "3 min 20 s")
    - "characterCount": número estimado de caracteres
    - "toneSummary": breve resumen de la actitud vocal recomendada
-   - "fullScript": el texto completo continuo listo para el teleprómter y síntesis
-   - "sections": arreglo de objetos con { "name", "directorNotes", "text" }`;
+   - "fullScript": el texto completo continuo listo para el teleprómter y síntesis`;
 
     const prompt = `Genera un guion de podcast sobre el siguiente tema:
 Tema: "${topic}"
@@ -262,13 +265,36 @@ Duración objetivo: aproximadamente ${durationMinutes} minutos.`;
       contents: prompt,
       systemInstruction,
       responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        required: ['title', 'estimatedDuration', 'characterCount', 'toneSummary', 'fullScript'],
+        properties: {
+          title: { type: Type.STRING },
+          estimatedDuration: { type: Type.STRING },
+          characterCount: { type: Type.NUMBER },
+          toneSummary: { type: Type.STRING },
+          fullScript: { type: Type.STRING },
+        },
+      },
     });
 
-    const text = response.text || '{}';
-    const parsed = JSON.parse(text);
+    const rawText = (response.text || '{}').replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+    const parsed = JSON.parse(rawText);
     return res.json(parsed);
   } catch (error: any) {
     console.error('Error generating script:', error);
+    const isAbortOrDemand =
+      error?.name === 'AbortError' ||
+      error?.name === 'TimeoutError' ||
+      String(error?.message || '').toLowerCase().includes('aborted') ||
+      extractStatusCode(error) === 503;
+
+    if (isAbortOrDemand) {
+      return res.status(503).json({
+        error:
+          'Los motores de IA están experimentando alta demanda temporal en este momento. Por favor intenta de nuevo en unos segundos.',
+      });
+    }
     return res.status(500).json({
       error: 'Error al generar el guion de podcast: ' + (error?.message || 'Error desconocido'),
     });
@@ -306,11 +332,24 @@ Responde en formato JSON:
       responseMimeType: 'application/json',
     });
 
-    const parsed = JSON.parse(response.text || '{}');
+    const rawText = (response.text || '{}').replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+    const parsed = JSON.parse(rawText);
     return res.json(parsed);
   } catch (error: any) {
     console.error('Error analyzing prosody:', error);
-    return res.status(500).json({ error: 'Error al analizar la prosodia: ' + error.message });
+    const isAbortOrDemand =
+      error?.name === 'AbortError' ||
+      error?.name === 'TimeoutError' ||
+      String(error?.message || '').toLowerCase().includes('aborted') ||
+      extractStatusCode(error) === 503;
+
+    if (isAbortOrDemand) {
+      return res.status(503).json({
+        error:
+          'Los motores de IA están experimentando alta demanda temporal en este momento. Por favor intenta de nuevo en unos segundos.',
+      });
+    }
+    return res.status(500).json({ error: 'Error al analizar la prosodia: ' + (error?.message || 'Error desconocido') });
   }
 });
 
@@ -347,11 +386,24 @@ Debes devolver un objeto JSON con el siguiente esquema exacto:
       responseMimeType: 'application/json',
     });
 
-    const parsed = JSON.parse(response.text || '{}');
+    const rawText = (response.text || '{}').replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+    const parsed = JSON.parse(rawText);
     return res.json(parsed);
   } catch (error: any) {
     console.error('Error analyzing script sentiment:', error);
-    return res.status(500).json({ error: 'Error al analizar el sentimiento: ' + error.message });
+    const isAbortOrDemand =
+      error?.name === 'AbortError' ||
+      error?.name === 'TimeoutError' ||
+      String(error?.message || '').toLowerCase().includes('aborted') ||
+      extractStatusCode(error) === 503;
+
+    if (isAbortOrDemand) {
+      return res.status(503).json({
+        error:
+          'Los motores de IA están experimentando alta demanda temporal en este momento. Por favor intenta de nuevo en unos segundos.',
+      });
+    }
+    return res.status(500).json({ error: 'Error al analizar el sentimiento: ' + (error?.message || 'Error desconocido') });
   }
 });
 
