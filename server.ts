@@ -15,34 +15,81 @@ const PORT = Number(process.env.PORT) || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Latest Google AI Studio models prioritized, with automatic production fallbacks
-// in case an external Render API key lacks preview model access.
-const TEXT_MODEL_PRIORITY = ['gemini-4-hydrogen', 'gemini-flash-latest', 'gemini-3.1-flash-lite'] as const;
+// for high demand (503), rate limits (429), server errors (500), unavailable models (404), or timeouts.
+const TEXT_MODEL_PRIORITY = ['gemini-4-hydrogen', 'gemini-flash-latest', 'gemini-2.5-flash'] as const;
 const TTS_MODEL_PRIORITY = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts'] as const;
 
-function isQuotaError(error: any): boolean {
+function extractStatusCode(error: any): number | undefined {
+  if (typeof error?.status === 'number') return error.status;
+  if (typeof error?.code === 'number') return error.code;
+  if (typeof error?.statusCode === 'number') return error.statusCode;
   const msg = String(error?.message || '');
+  const match = msg.match(/\b(400|403|404|408|429|500|502|503|504)\b/);
+  return match ? Number(match[1]) : undefined;
+}
+
+function isQuotaError(error: any): boolean {
+  const status = extractStatusCode(error);
+  const msg = String(error?.message || '').toLowerCase();
   return (
-    error?.status === 429 ||
+    status === 429 ||
     msg.includes('429') ||
-    msg.toLowerCase().includes('quota') ||
-    msg.includes('RESOURCE_EXHAUSTED')
+    msg.includes('quota') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('rate limit')
   );
 }
 
 function shouldFallbackModel(error: any): boolean {
-  if (isQuotaError(error)) return false;
-  const status = error?.status;
+  const status = extractStatusCode(error);
+  const name = String(error?.name || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
   const msg = String(error?.message || '').toLowerCase();
-  return (
+
+  // Do not retry if the API key itself is invalid or missing
+  if (msg.includes('api_key_invalid') || msg.includes('api key not valid')) {
+    return false;
+  }
+
+  // Fallback immediately on availability, demand, quota, server, model-access, or timeout errors
+  if (
+    status === 503 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 504 ||
+    status === 408 ||
     status === 404 ||
     status === 403 ||
-    status === 400 ||
+    status === 400
+  ) {
+    return true;
+  }
+
+  return (
+    name.includes('abort') ||
+    name.includes('timeout') ||
+    code.includes('timeout') ||
+    code.includes('etimedout') ||
+    code.includes('econnreset') ||
+    code.includes('econnaborted') ||
+    msg.includes('unavailable') ||
+    msg.includes('overloaded') ||
+    msg.includes('high demand') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('quota') ||
+    msg.includes('rate limit') ||
+    msg.includes('internal') ||
+    msg.includes('timeout') ||
+    msg.includes('timed out') ||
+    msg.includes('deadline') ||
     msg.includes('not found') ||
     msg.includes('not supported') ||
     msg.includes('permission') ||
     msg.includes('access') ||
     msg.includes('deprecated') ||
-    msg.includes('unknown model')
+    msg.includes('unknown model') ||
+    msg.includes('fetch failed')
   );
 }
 
@@ -60,6 +107,7 @@ async function generateTextWithFallback(params: {
         contents: params.contents,
         config: {
           systemInstruction: params.systemInstruction,
+          abortSignal: AbortSignal.timeout(30000),
           ...(params.responseMimeType ? { responseMimeType: params.responseMimeType } : {}),
         },
       });
@@ -67,7 +115,11 @@ async function generateTextWithFallback(params: {
       lastError = error;
       const hasNext = i < TEXT_MODEL_PRIORITY.length - 1;
       if (hasNext && shouldFallbackModel(error)) {
-        console.warn(`Modelo ${model} no disponible para esta clave, usando respaldo automático:`, error?.message);
+        const nextModel = TEXT_MODEL_PRIORITY[i + 1];
+        console.warn(
+          `[Fallback Texto] Modelo ${model} falló (${extractStatusCode(error) || error?.name || 'error'}), reintentando al instante con ${nextModel}:`,
+          error?.message
+        );
         continue;
       }
       throw error;
@@ -99,6 +151,7 @@ async function generateTtsWithFallback(params: {
         ],
         config: {
           responseModalities: ['AUDIO'],
+          abortSignal: AbortSignal.timeout(30000),
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
@@ -112,7 +165,11 @@ async function generateTtsWithFallback(params: {
       lastError = error;
       const hasNext = i < TTS_MODEL_PRIORITY.length - 1;
       if (hasNext && shouldFallbackModel(error)) {
-        console.warn(`Modelo TTS ${model} no disponible, usando respaldo automático:`, error?.message);
+        const nextModel = TTS_MODEL_PRIORITY[i + 1];
+        console.warn(
+          `[Fallback TTS] Modelo ${model} falló (${extractStatusCode(error) || error?.name || 'error'}), reintentando con ${nextModel}:`,
+          error?.message
+        );
         continue;
       }
       throw error;
