@@ -2,8 +2,30 @@ import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import {
+  PLANS_CATALOG,
+  checkDatabaseHealth,
+  getCommercialConfig,
+  saveCommercialConfig,
+  getOrders,
+  saveOrders,
+  getLicenses,
+  saveLicenses,
+  generateOrderCode,
+  generateLicensePin,
+  isValidHttpUrl,
+  sanitizeWhatsapp,
+  formatWhatsappDigits,
+} from './server/storage.ts';
+import type {
+  PlanId,
+  CommercialConfig,
+  SubscriptionOrder,
+  LicenseRecord,
+} from './server/storage.ts';
 
 dotenv.config();
 
@@ -194,16 +216,65 @@ async function generateTtsWithFallback(params: {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Enable CORS and handle preflight requests for all endpoints
+// Enable CORS for public AI endpoints only (never wildcard CORS on authenticated /api/superadmin endpoints)
 app.use((req: Request, res: Response, next: NextFunction) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (!req.path.startsWith('/api/superadmin')) {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  }
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
   next();
 });
+
+const SESSION_SIGNING_SECRET =
+  (process.env.SESSION_SECRET || '').trim() || crypto.randomBytes(32).toString('hex');
+
+function getConfiguredAdminPin(): string {
+  return (process.env.ADMIN_PIN || '1234').trim();
+}
+
+function timingSafePinMatch(candidate: string, expected: string): boolean {
+  const hashA = crypto.createHash('sha256').update(candidate).digest();
+  const hashB = crypto.createHash('sha256').update(expected).digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
+
+function issueAdminToken(): { token: string; expiresAt: number } {
+  const expiresAt = Date.now() + 12 * 60 * 60 * 1000;
+  const payload = Buffer.from(JSON.stringify({ role: 'superadmin', exp: expiresAt })).toString('base64url');
+  const sig = crypto.createHmac('sha256', SESSION_SIGNING_SECRET).update(payload).digest('base64url');
+  return { token: `${payload}.${sig}`, expiresAt };
+}
+
+function verifyAdminToken(token: string): boolean {
+  const parts = token.split('.');
+  if (parts.length !== 2) return false;
+  const [payload, sig] = parts;
+  const expectedSig = crypto.createHmac('sha256', SESSION_SIGNING_SECRET).update(payload).digest('base64url');
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return false;
+  }
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8'));
+    return decoded?.role === 'superadmin' && typeof decoded?.exp === 'number' && decoded.exp > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function requireSuperadmin(req: Request, res: Response, next: NextFunction) {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!token || !verifyAdminToken(token)) {
+    return res.status(401).json({ error: 'Sesión de administrador requerida o expirada.' });
+  }
+  return next();
+}
 
 // Health Check Endpoint for Render & UptimeRobot
 app.get('/api/health', (_req: Request, res: Response) => {
@@ -662,6 +733,499 @@ app.post('/api/voice-clone/synthesize', async (req: Request, res: Response) => {
     return res.status(500).json({
       error: 'Error en la clonación de voz: ' + (error?.message || 'Error desconocido'),
     });
+  }
+});
+
+// ============================================================================
+// COMMERCIAL SUBSCRIPTIONS, CHECKOUT, LICENSES & SUPERADMIN ROUTES
+// ============================================================================
+
+app.get('/api/commercial/public', async (_req: Request, res: Response) => {
+  try {
+    const config = await getCommercialConfig();
+    return res.json({
+      plans: Object.values(PLANS_CATALOG),
+      supportWhatsapp: config.supportWhatsapp,
+      configuredLinks: {
+        creator: {
+          mp: isValidHttpUrl(config.paymentLinks.creator.mpUrl),
+          global: isValidHttpUrl(config.paymentLinks.creator.globalUrl),
+        },
+        pro: {
+          mp: isValidHttpUrl(config.paymentLinks.pro.mpUrl),
+          global: isValidHttpUrl(config.paymentLinks.pro.globalUrl),
+        },
+        agency: {
+          mp: isValidHttpUrl(config.paymentLinks.agency.mpUrl),
+          global: isValidHttpUrl(config.paymentLinks.agency.globalUrl),
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching public commercial config:', error);
+    return res.status(500).json({ error: 'No se pudo cargar la configuración comercial.' });
+  }
+});
+
+// Create pre-payment order VLC-XXXX
+app.post('/api/orders', async (req: Request, res: Response) => {
+  try {
+    const customerName = String(req.body?.customerName || '').trim();
+    const whatsapp = sanitizeWhatsapp(String(req.body?.whatsapp || ''));
+    const planId = String(req.body?.planId || '') as PlanId;
+
+    if (customerName.length < 2 || customerName.length > 100) {
+      return res.status(400).json({ error: 'Ingresa tu Nombre o el de tu Estudio (mínimo 2 caracteres).' });
+    }
+    if (formatWhatsappDigits(whatsapp).length < 7) {
+      return res.status(400).json({ error: 'Ingresa un número de WhatsApp válido con código de país.' });
+    }
+    if (!planId || !(planId in PLANS_CATALOG)) {
+      return res.status(400).json({ error: 'Plan seleccionado no válido.' });
+    }
+
+    const plan = PLANS_CATALOG[planId];
+    const [orders, config] = await Promise.all([getOrders(), getCommercialConfig()]);
+    const code = generateOrderCode(orders);
+    const now = new Date().toISOString();
+
+    const order: SubscriptionOrder = {
+      code,
+      customerName,
+      whatsapp,
+      planId,
+      planName: plan.name,
+      priceUsd: plan.priceUsd,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await saveOrders([order, ...orders]);
+
+    return res.status(201).json({
+      order: {
+        code: order.code,
+        customerName: order.customerName,
+        planId: order.planId,
+        planName: order.planName,
+        priceUsd: order.priceUsd,
+        status: order.status,
+        createdAt: order.createdAt,
+      },
+      paymentLinks: {
+        mpUrl: isValidHttpUrl(config.paymentLinks[planId].mpUrl) ? config.paymentLinks[planId].mpUrl : '',
+        globalUrl: isValidHttpUrl(config.paymentLinks[planId].globalUrl) ? config.paymentLinks[planId].globalUrl : '',
+      },
+      supportWhatsapp: config.supportWhatsapp,
+    });
+  } catch (error: any) {
+    console.error('Error creating order:', error);
+    return res.status(500).json({ error: 'No se pudo generar el pedido. Intenta nuevamente.' });
+  }
+});
+
+// Get order status & configured payment links by VLC-XXXX
+app.get('/api/orders/:code', async (req: Request, res: Response) => {
+  try {
+    const code = String(req.params.code || '').trim().toUpperCase();
+    if (!/^VLC-[A-Z0-9]{4}$/.test(code)) {
+      return res.status(400).json({ error: 'Formato de código de pedido inválido (ej. VLC-1234).' });
+    }
+
+    const [orders, config] = await Promise.all([getOrders(), getCommercialConfig()]);
+    const order = orders.find((o) => o.code.toUpperCase() === code);
+    if (!order) {
+      return res.status(404).json({ error: `No encontramos ningún pedido con el código ${code}.` });
+    }
+
+    return res.json({
+      order: {
+        code: order.code,
+        customerName: order.customerName,
+        planId: order.planId,
+        planName: order.planName,
+        priceUsd: order.priceUsd,
+        status: order.status,
+        operationNumber: order.operationNumber || '',
+        paymentMethod: order.paymentMethod || undefined,
+      },
+      paymentLinks: {
+        mpUrl: isValidHttpUrl(config.paymentLinks[order.planId].mpUrl)
+          ? config.paymentLinks[order.planId].mpUrl
+          : '',
+        globalUrl: isValidHttpUrl(config.paymentLinks[order.planId].globalUrl)
+          ? config.paymentLinks[order.planId].globalUrl
+          : '',
+      },
+      supportWhatsapp: config.supportWhatsapp,
+    });
+  } catch (error: any) {
+    console.error('Error reading order:', error);
+    return res.status(500).json({ error: 'Error al consultar el pedido.' });
+  }
+});
+
+// Update operation number or payment method from /pago-exitoso or /checkout
+app.patch('/api/orders/:code', async (req: Request, res: Response) => {
+  try {
+    const code = String(req.params.code || '').trim().toUpperCase();
+    if (!/^VLC-[A-Z0-9]{4}$/.test(code)) {
+      return res.status(400).json({ error: 'Código de pedido inválido.' });
+    }
+
+    const orders = await getOrders();
+    const index = orders.findIndex((o) => o.code.toUpperCase() === code);
+    if (index === -1) {
+      return res.status(404).json({ error: `Pedido ${code} no encontrado.` });
+    }
+
+    const current = orders[index];
+    const operationNumber =
+      req.body?.operationNumber !== undefined
+        ? String(req.body.operationNumber).trim().slice(0, 80)
+        : current.operationNumber;
+    const paymentMethod =
+      req.body?.paymentMethod === 'mercadopago' || req.body?.paymentMethod === 'global'
+        ? req.body.paymentMethod
+        : current.paymentMethod;
+
+    const updated: SubscriptionOrder = {
+      ...current,
+      operationNumber,
+      paymentMethod,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextOrders = [...orders];
+    nextOrders[index] = updated;
+    await saveOrders(nextOrders);
+
+    return res.json({
+      order: {
+        code: updated.code,
+        customerName: updated.customerName,
+        planId: updated.planId,
+        planName: updated.planName,
+        priceUsd: updated.priceUsd,
+        status: updated.status,
+        operationNumber: updated.operationNumber || '',
+      },
+    });
+  } catch (error: any) {
+    console.error('Error updating order:', error);
+    return res.status(500).json({ error: 'No se pudo actualizar el número de operación.' });
+  }
+});
+
+// Verify 4-digit License PIN against backend store
+app.post('/api/licenses/verify', async (req: Request, res: Response) => {
+  try {
+    const pin = String(req.body?.pin || '').trim();
+    if (!/^\d{4}$/.test(pin)) {
+      return res.status(400).json({ error: 'El PIN de licencia debe tener exactamente 4 dígitos numéricos.' });
+    }
+
+    const [licenses, config] = await Promise.all([getLicenses(), getCommercialConfig()]);
+    const license = licenses.find((l) => l.pin === pin);
+
+    if (!license) {
+      return res.status(401).json({ error: 'PIN de licencia no encontrado. Verifica el código o adquiere un plan.' });
+    }
+    if (license.status !== 'active') {
+      return res.status(403).json({
+        paused: true,
+        error: 'Tu licencia está pausada temporalmente. Contacta a soporte por WhatsApp para reactivarla.',
+        supportWhatsapp: config.supportWhatsapp,
+      });
+    }
+
+    const plan = PLANS_CATALOG[license.planId] || PLANS_CATALOG.creator;
+    return res.json({
+      valid: true,
+      license: {
+        id: license.id,
+        pin: license.pin,
+        customerName: license.customerName,
+        planId: license.planId,
+        planName: plan.name,
+        status: license.status,
+        whiteLabel: Boolean(license.whiteLabel),
+      },
+      supportWhatsapp: config.supportWhatsapp,
+    });
+  } catch (error: any) {
+    console.error('Error verifying license PIN:', error);
+    return res.status(500).json({ error: 'No se pudo validar la licencia en el servidor.' });
+  }
+});
+
+// Superadmin login
+app.post('/api/superadmin/login', (req: Request, res: Response) => {
+  const pin = String(req.body?.pin || '').trim();
+  const expectedPin = getConfiguredAdminPin();
+  if (!pin || !timingSafePinMatch(pin, expectedPin)) {
+    return res.status(401).json({ error: 'PIN de administrador incorrecto.' });
+  }
+  const { token, expiresAt } = issueAdminToken();
+  return res.json({ token, expiresAt });
+});
+
+// Superadmin dashboard (DB status + config + orders + licenses)
+app.get('/api/superadmin/dashboard', requireSuperadmin, async (_req: Request, res: Response) => {
+  try {
+    const [dbStatus, config, orders, licenses] = await Promise.all([
+      checkDatabaseHealth(),
+      getCommercialConfig(),
+      getOrders(),
+      getLicenses(),
+    ]);
+    return res.json({
+      dbStatus,
+      config,
+      orders,
+      licenses,
+      plans: Object.values(PLANS_CATALOG),
+    });
+  } catch (error: any) {
+    console.error('Error loading superadmin dashboard:', error);
+    return res.status(500).json({ error: 'Error al cargar el panel de administración.' });
+  }
+});
+
+// Superadmin payment links & support WhatsApp config
+app.put('/api/superadmin/config', requireSuperadmin, async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const rawLinks = body.paymentLinks || {};
+    const plans: PlanId[] = ['creator', 'pro', 'agency'];
+
+    const cleanLinks = {} as CommercialConfig['paymentLinks'];
+    for (const planId of plans) {
+      const mpUrl = String(rawLinks?.[planId]?.mpUrl || '').trim();
+      const globalUrl = String(rawLinks?.[planId]?.globalUrl || '').trim();
+
+      if (mpUrl && !isValidHttpUrl(mpUrl)) {
+        return res.status(400).json({
+          error: `El link de Mercado Pago para ${PLANS_CATALOG[planId].name} debe comenzar con https:// o http://`,
+        });
+      }
+      if (globalUrl && !isValidHttpUrl(globalUrl)) {
+        return res.status(400).json({
+          error: `El link de PayPal / dLocal Go para ${PLANS_CATALOG[planId].name} debe comenzar con https:// o http://`,
+        });
+      }
+
+      cleanLinks[planId] = { mpUrl, globalUrl };
+    }
+
+    const supportWhatsapp = sanitizeWhatsapp(String(body.supportWhatsapp || ''));
+
+    const saved = await saveCommercialConfig({
+      paymentLinks: cleanLinks,
+      supportWhatsapp,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return res.json({ config: saved });
+  } catch (error: any) {
+    console.error('Error saving commercial config:', error);
+    return res.status(500).json({ error: 'No se pudo guardar la configuración en la base de datos.' });
+  }
+});
+
+// Superadmin: activate pending order & generate 4-digit PIN license
+app.post('/api/superadmin/orders/:code/activate', requireSuperadmin, async (req: Request, res: Response) => {
+  try {
+    const code = String(req.params.code || '').trim().toUpperCase();
+    const [orders, licenses] = await Promise.all([getOrders(), getLicenses()]);
+    const orderIdx = orders.findIndex((o) => o.code.toUpperCase() === code);
+    if (orderIdx === -1) {
+      return res.status(404).json({ error: `Solicitud ${code} no encontrada.` });
+    }
+
+    const order = orders[orderIdx];
+    const existingLicense = order.licensePin
+      ? licenses.find((l) => l.pin === order.licensePin)
+      : licenses.find((l) => l.orderCode === order.code);
+
+    const now = new Date().toISOString();
+    let license: LicenseRecord;
+    let nextLicenses = [...licenses];
+
+    if (existingLicense) {
+      license = { ...existingLicense, status: 'active', updatedAt: now };
+      nextLicenses = nextLicenses.map((l) => (l.id === existingLicense.id ? license : l));
+    } else {
+      const pin = generateLicensePin(licenses);
+      license = {
+        id: crypto.randomUUID(),
+        pin,
+        customerName: order.customerName,
+        whatsapp: order.whatsapp,
+        planId: order.planId,
+        status: 'active',
+        whiteLabel: order.planId === 'agency',
+        orderCode: order.code,
+        createdAt: now,
+        updatedAt: now,
+      };
+      nextLicenses = [license, ...licenses];
+    }
+
+    const updatedOrder: SubscriptionOrder = {
+      ...order,
+      status: 'activated',
+      licensePin: license.pin,
+      updatedAt: now,
+    };
+
+    const nextOrders = [...orders];
+    nextOrders[orderIdx] = updatedOrder;
+
+    await Promise.all([saveLicenses(nextLicenses), saveOrders(nextOrders)]);
+
+    const whatsappMessage = `¡Hola ${license.customerName}! 🎉 Tu suscripción al ${order.planName} (${order.code}) ya está activa.\n\n🔑 Tu PIN de Licencia es: ${license.pin}\n\nIngresa a la plataforma, toca "🔑 Ingresar con mi PIN de Licencia" e introduce ${license.pin} para desbloquear todo el estudio de IA y clonación vocal.`;
+
+    return res.json({
+      order: updatedOrder,
+      license,
+      whatsappMessage,
+    });
+  } catch (error: any) {
+    console.error('Error activating order:', error);
+    return res.status(500).json({ error: error?.message || 'Error al activar el pedido.' });
+  }
+});
+
+// Superadmin: delete order
+app.delete('/api/superadmin/orders/:code', requireSuperadmin, async (req: Request, res: Response) => {
+  try {
+    const code = String(req.params.code || '').trim().toUpperCase();
+    const orders = await getOrders();
+    const nextOrders = orders.filter((o) => o.code.toUpperCase() !== code);
+    await saveOrders(nextOrders);
+    return res.json({ deleted: true, code });
+  } catch (error: any) {
+    console.error('Error deleting order:', error);
+    return res.status(500).json({ error: 'No se pudo eliminar la solicitud.' });
+  }
+});
+
+// Superadmin: create manual license
+app.post('/api/superadmin/licenses', requireSuperadmin, async (req: Request, res: Response) => {
+  try {
+    const customerName = String(req.body?.customerName || '').trim();
+    const whatsapp = sanitizeWhatsapp(String(req.body?.whatsapp || ''));
+    const planId = String(req.body?.planId || 'creator') as PlanId;
+    const requestedPin = String(req.body?.pin || '').trim();
+    const whiteLabel = Boolean(req.body?.whiteLabel);
+
+    if (customerName.length < 2) {
+      return res.status(400).json({ error: 'Nombre del cliente obligatorio.' });
+    }
+    if (!(planId in PLANS_CATALOG)) {
+      return res.status(400).json({ error: 'Plan inválido.' });
+    }
+
+    const licenses = await getLicenses();
+    let pin = requestedPin;
+    if (pin) {
+      if (!/^\d{4}$/.test(pin)) {
+        return res.status(400).json({ error: 'El PIN debe tener exactamente 4 dígitos.' });
+      }
+      if (licenses.some((l) => l.pin === pin)) {
+        return res.status(409).json({ error: `El PIN ${pin} ya está asignado a otro cliente.` });
+      }
+    } else {
+      pin = generateLicensePin(licenses);
+    }
+
+    const now = new Date().toISOString();
+    const license: LicenseRecord = {
+      id: crypto.randomUUID(),
+      pin,
+      customerName,
+      whatsapp,
+      planId,
+      status: 'active',
+      whiteLabel,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await saveLicenses([license, ...licenses]);
+    return res.status(201).json({ license });
+  } catch (error: any) {
+    console.error('Error creating license:', error);
+    return res.status(500).json({ error: error?.message || 'Error al crear la licencia.' });
+  }
+});
+
+// Superadmin: update license (edit, pause/activate, toggle whiteLabel)
+app.patch('/api/superadmin/licenses/:id', requireSuperadmin, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const licenses = await getLicenses();
+    const idx = licenses.findIndex((l) => l.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Licencia no encontrada.' });
+    }
+
+    const current = licenses[idx];
+    const body = req.body || {};
+
+    let nextPin = current.pin;
+    if (body.pin !== undefined) {
+      const candidate = String(body.pin).trim();
+      if (!/^\d{4}$/.test(candidate)) {
+        return res.status(400).json({ error: 'El PIN debe tener exactamente 4 dígitos numéricos.' });
+      }
+      if (licenses.some((l) => l.id !== id && l.pin === candidate)) {
+        return res.status(409).json({ error: `El PIN ${candidate} ya está en uso por otra licencia.` });
+      }
+      nextPin = candidate;
+    }
+
+    const nextPlanId: PlanId =
+      body.planId && body.planId in PLANS_CATALOG ? (body.planId as PlanId) : current.planId;
+    const nextStatus =
+      body.status === 'active' || body.status === 'paused' ? body.status : current.status;
+
+    const updated: LicenseRecord = {
+      ...current,
+      customerName:
+        body.customerName !== undefined ? String(body.customerName).trim() || current.customerName : current.customerName,
+      whatsapp: body.whatsapp !== undefined ? sanitizeWhatsapp(String(body.whatsapp)) : current.whatsapp,
+      planId: nextPlanId,
+      pin: nextPin,
+      status: nextStatus,
+      whiteLabel: body.whiteLabel !== undefined ? Boolean(body.whiteLabel) : current.whiteLabel,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextLicenses = [...licenses];
+    nextLicenses[idx] = updated;
+    await saveLicenses(nextLicenses);
+
+    return res.json({ license: updated });
+  } catch (error: any) {
+    console.error('Error updating license:', error);
+    return res.status(500).json({ error: 'No se pudo actualizar la licencia.' });
+  }
+});
+
+// Superadmin: delete license
+app.delete('/api/superadmin/licenses/:id', requireSuperadmin, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const licenses = await getLicenses();
+    const nextLicenses = licenses.filter((l) => l.id !== id);
+    await saveLicenses(nextLicenses);
+    return res.json({ deleted: true, id });
+  } catch (error: any) {
+    console.error('Error deleting license:', error);
+    return res.status(500).json({ error: 'No se pudo eliminar la licencia.' });
   }
 });
 

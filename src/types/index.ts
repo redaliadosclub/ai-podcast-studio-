@@ -99,3 +99,76 @@ export interface GeneratedEpisodeAudio {
     style?: number;
   };
 }
+
+export type PlanId = 'creator' | 'pro' | 'agency';
+
+export interface PlanDefinition {
+  id: PlanId;
+  name: string;
+  priceUsd: number;
+  billingLabel: string;
+  audience: string;
+  highlight?: boolean;
+  features: string[];
+}
+
+export interface ActiveLicenseSession {
+  id: string;
+  pin: string;
+  customerName: string;
+  planId: PlanId;
+  planName: string;
+  status: 'active' | 'paused';
+  whiteLabel: boolean;
+}
+
+export interface OrderSummary {
+  code: string;
+  customerName: string;
+  planId: PlanId;
+  planName: string;
+  priceUsd: number;
+  status: 'pending' | 'activated' | 'cancelled';
+  operationNumber?: string;
+  paymentMethod?: 'mercadopago' | 'global';
+  createdAt?: string;
+}
+
+export interface PlanPaymentLinks {
+  mpUrl: string;
+  globalUrl: string;
+}
+
+export interface CommercialConfig {
+  paymentLinks: Record<PlanId, PlanPaymentLinks>;
+  supportWhatsapp: string;
+  updatedAt: string;
+}
+
+export interface SuperadminOrder extends OrderSummary {
+  whatsapp: string;
+  licensePin?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SuperadminLicense {
+  id: string;
+  pin: string;
+  customerName: string;
+  whatsapp: string;
+  planId: PlanId;
+  status: 'active' | 'paused';
+  whiteLabel: boolean;
+  orderCode?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DbHealthStatus {
+  mode: 'supabase' | 'local';
+  connected: boolean;
+  label: string;
+  detail?: string;
+}
+
