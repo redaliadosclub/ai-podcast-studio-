@@ -16,7 +16,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 // Latest Google AI Studio models prioritized, with automatic production fallbacks
 // for high demand (503), rate limits (429), server errors (500), unavailable models (404), or timeouts.
-const TEXT_MODEL_PRIORITY = ['gemini-4-hydrogen', 'gemini-flash-latest', 'gemini-2.5-flash'] as const;
+const TEXT_MODEL_PRIORITY = ['gemini-4-hydrogen', 'gemini-flash-latest', 'gemini-3.8-flash'] as const;
 const TTS_MODEL_PRIORITY = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts'] as const;
 
 function extractStatusCode(error: any): number | undefined {
