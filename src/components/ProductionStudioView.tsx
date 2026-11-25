@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ElevenLabsSettings, GeneratedEpisodeAudio, RecordedSample } from '../types';
 import { TELEPROMPTER_SCRIPTS } from '../data/teleprompterScripts';
+import { fetchWithFallbackNotice } from '../utils/fetchWithTimeout';
 import { Play, Pause, Download, Sliders, Key, Mic, RefreshCw, Sparkles, CheckCircle2, AlertCircle, FileDown, FileText, FastForward, Copy, ExternalLink, Code, Upload, Volume2, Globe, Radio } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 
@@ -60,6 +61,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
 
   // Generation & Audio Playback State
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [fallbackStatus, setFallbackStatus] = useState<string | null>(null);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [audioDuration, setAudioDuration] = useState<number>(0);
@@ -182,6 +184,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
   const handleSynthesize = async () => {
     setErrorMessage(null);
     setSuccessNotice(null);
+    setFallbackStatus(null);
     if (!scriptText.trim()) {
       setErrorMessage('No hay texto en el guion. Ve a la pestaña Editor de Guiones para escribirlo o generarlo.');
       return;
@@ -202,20 +205,24 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
           return;
         }
 
-        const res = await fetch('/api/elevenlabs/synthesize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            apiKey: settings.apiKey,
-            voiceId: settings.voiceId,
-            text: scriptText,
-            stability: settings.stability,
-            similarityBoost: settings.similarityBoost,
-            style: settings.style,
-            useSpeakerBoost: settings.useSpeakerBoost,
-            modelId: settings.modelId,
-          }),
-        });
+        const res = await fetchWithFallbackNotice(
+          '/api/elevenlabs/synthesize',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              apiKey: settings.apiKey,
+              voiceId: settings.voiceId,
+              text: scriptText,
+              stability: settings.stability,
+              similarityBoost: settings.similarityBoost,
+              style: settings.style,
+              useSpeakerBoost: settings.useSpeakerBoost,
+              modelId: settings.modelId,
+            }),
+          },
+          { timeoutMs: 60000 }
+        );
 
         const data = await res.json();
         if (!res.ok) {
@@ -251,18 +258,26 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
         // F5-TTS / XTTS Open-Source Voice Cloning Studio (Option C)
         const refAudioB64 = await getActiveSampleBase64();
 
-        const res = await fetch('/api/voice-clone/synthesize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: scriptText,
-            refText: f5RefText,
-            refAudioBase64: refAudioB64,
-            endpointUrl: f5Mode === 'custom_endpoint' ? customEndpointUrl : undefined,
-            apiToken: f5Mode === 'custom_endpoint' ? customApiToken : undefined,
-            mode: f5Mode === 'custom_endpoint' ? 'custom_url' : 'native_neural',
-          }),
-        });
+        const res = await fetchWithFallbackNotice(
+          '/api/voice-clone/synthesize',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: scriptText,
+              refText: f5RefText,
+              refAudioBase64: refAudioB64,
+              endpointUrl: f5Mode === 'custom_endpoint' ? customEndpointUrl : undefined,
+              apiToken: f5Mode === 'custom_endpoint' ? customApiToken : undefined,
+              mode: f5Mode === 'custom_endpoint' ? 'custom_url' : 'native_neural',
+            }),
+          },
+          {
+            timeoutMs: 60000,
+            fallbackDelayMs: 8500,
+            onFallbackDelay: () => setFallbackStatus('Redirigiendo al motor de respaldo...'),
+          }
+        );
 
         const responseText = await res.text();
         let data: any = {};
@@ -309,15 +324,23 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
         setSuccessNotice('¡Podcast generado en español con tu muestra vocal!');
       } else {
         // Gemini Audio Preview engine
-        const res = await fetch('/api/tts/preview', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: scriptText,
-            voiceName: geminiVoice,
-            style: geminiStyle,
-          }),
-        });
+        const res = await fetchWithFallbackNotice(
+          '/api/tts/preview',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: scriptText,
+              voiceName: geminiVoice,
+              style: geminiStyle,
+            }),
+          },
+          {
+            timeoutMs: 60000,
+            fallbackDelayMs: 8500,
+            onFallbackDelay: () => setFallbackStatus('Redirigiendo al motor de respaldo...'),
+          }
+        );
 
         const data = await res.json();
         if (!res.ok) {
@@ -349,6 +372,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
       setErrorMessage('Error en la generación de audio: ' + err.message);
     } finally {
       setIsSynthesizing(false);
+      setFallbackStatus(null);
     }
   };
 
@@ -1064,9 +1088,10 @@ ${scriptText}
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
                 <span>
-                  {engine === 'f5tts'
-                    ? 'Clonando Audio en Español...'
-                    : 'Generando Audio del Episodio...'}
+                  {fallbackStatus ||
+                    (engine === 'f5tts'
+                      ? 'Clonando Audio en Español...'
+                      : 'Generando Audio del Episodio...')}
                 </span>
               </>
             ) : (

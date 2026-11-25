@@ -14,10 +14,18 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
-// Latest Google AI Studio models prioritized, with automatic production fallbacks
-// for high demand (503), rate limits (429), server errors (500), unavailable models (404), or timeouts.
-const TEXT_MODEL_PRIORITY = ['gemini-4-hydrogen', 'gemini-flash-latest', 'gemini-3.8-flash'] as const;
-const TTS_MODEL_PRIORITY = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts'] as const;
+// Latest Google AI Studio models prioritized, with fast per-attempt timeouts
+// so congested preview models fail over cleanly within the 60s frontend window.
+const TEXT_MODEL_CHAIN = [
+  { model: 'gemini-4-hydrogen', timeoutMs: 8000 },
+  { model: 'gemini-3.8-flash', timeoutMs: 15000 },
+  { model: 'gemini-flash-latest', timeoutMs: 25000 },
+] as const;
+
+const TTS_MODEL_CHAIN = [
+  { model: 'gemini-3.8-flash-tts', timeoutMs: 12000 },
+  { model: 'gemini-3.8-flash-lite-tts', timeoutMs: 25000 },
+] as const;
 
 function extractStatusCode(error: any): number | undefined {
   if (typeof error?.status === 'number') return error.status;
@@ -51,7 +59,7 @@ function shouldFallbackModel(error: any): boolean {
     return false;
   }
 
-  // Fallback immediately on availability, demand, quota, server, model-access, or timeout errors
+  // Fallback immediately on availability, demand, quota, server, model-access, or timeout/abort errors
   if (
     status === 503 ||
     status === 429 ||
@@ -73,6 +81,7 @@ function shouldFallbackModel(error: any): boolean {
     code.includes('etimedout') ||
     code.includes('econnreset') ||
     code.includes('econnaborted') ||
+    msg.includes('aborted') ||
     msg.includes('unavailable') ||
     msg.includes('overloaded') ||
     msg.includes('high demand') ||
@@ -99,25 +108,25 @@ async function generateTextWithFallback(params: {
   responseMimeType?: string;
 }) {
   let lastError: any;
-  for (let i = 0; i < TEXT_MODEL_PRIORITY.length; i++) {
-    const model = TEXT_MODEL_PRIORITY[i];
+  for (let i = 0; i < TEXT_MODEL_CHAIN.length; i++) {
+    const { model, timeoutMs } = TEXT_MODEL_CHAIN[i];
     try {
       return await ai.models.generateContent({
         model,
         contents: params.contents,
         config: {
           systemInstruction: params.systemInstruction,
-          abortSignal: AbortSignal.timeout(30000),
+          abortSignal: AbortSignal.timeout(timeoutMs),
           ...(params.responseMimeType ? { responseMimeType: params.responseMimeType } : {}),
         },
       });
     } catch (error: any) {
       lastError = error;
-      const hasNext = i < TEXT_MODEL_PRIORITY.length - 1;
+      const hasNext = i < TEXT_MODEL_CHAIN.length - 1;
       if (hasNext && shouldFallbackModel(error)) {
-        const nextModel = TEXT_MODEL_PRIORITY[i + 1];
+        const nextModel = TEXT_MODEL_CHAIN[i + 1].model;
         console.warn(
-          `[Fallback Texto] Modelo ${model} falló (${extractStatusCode(error) || error?.name || 'error'}), reintentando al instante con ${nextModel}:`,
+          `[Fallback Texto] Modelo ${model} falló (${extractStatusCode(error) || error?.name || 'error'}, timeout ${timeoutMs}ms), reintentando al instante con ${nextModel}:`,
           error?.message
         );
         continue;
@@ -134,8 +143,8 @@ async function generateTtsWithFallback(params: {
   style?: string;
 }) {
   let lastError: any;
-  for (let i = 0; i < TTS_MODEL_PRIORITY.length; i++) {
-    const model = TTS_MODEL_PRIORITY[i];
+  for (let i = 0; i < TTS_MODEL_CHAIN.length; i++) {
+    const { model, timeoutMs } = TTS_MODEL_CHAIN[i];
     const part: Record<string, any> = { text: params.text };
     if (i === 0 && params.style) {
       part.speechMetadata = { style: params.style };
@@ -151,7 +160,7 @@ async function generateTtsWithFallback(params: {
         ],
         config: {
           responseModalities: ['AUDIO'],
-          abortSignal: AbortSignal.timeout(30000),
+          abortSignal: AbortSignal.timeout(timeoutMs),
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
@@ -163,11 +172,11 @@ async function generateTtsWithFallback(params: {
       });
     } catch (error: any) {
       lastError = error;
-      const hasNext = i < TTS_MODEL_PRIORITY.length - 1;
+      const hasNext = i < TTS_MODEL_CHAIN.length - 1;
       if (hasNext && shouldFallbackModel(error)) {
-        const nextModel = TTS_MODEL_PRIORITY[i + 1];
+        const nextModel = TTS_MODEL_CHAIN[i + 1].model;
         console.warn(
-          `[Fallback TTS] Modelo ${model} falló (${extractStatusCode(error) || error?.name || 'error'}), reintentando con ${nextModel}:`,
+          `[Fallback TTS] Modelo ${model} falló (${extractStatusCode(error) || error?.name || 'error'}, timeout ${timeoutMs}ms), reintentando con ${nextModel}:`,
           error?.message
         );
         continue;

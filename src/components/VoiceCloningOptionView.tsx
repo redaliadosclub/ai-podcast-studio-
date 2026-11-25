@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { RecordedSample } from '../types';
 import { TELEPROMPTER_SCRIPTS } from '../data/teleprompterScripts';
+import { fetchWithFallbackNotice } from '../utils/fetchWithTimeout';
 import {
   Mic,
   Square,
@@ -86,6 +87,7 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
 
   // Synthesis state
   const [isSynthesizing, setIsSynthesizing] = useState<boolean>(false);
+  const [fallbackStatus, setFallbackStatus] = useState<string | null>(null);
   const [isQuotaExceeded, setIsQuotaExceeded] = useState<boolean>(false);
   const [isBrowserSpeaking, setIsBrowserSpeaking] = useState<boolean>(false);
   const [clonedAudioUrl, setClonedAudioUrl] = useState<string | null>(null);
@@ -243,6 +245,7 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
   const handleTriggerCloning = async () => {
     setErrorMessage(null);
     setSuccessMessage(null);
+    setFallbackStatus(null);
 
     if (sourceType === 'upload' && !uploadedBlobUrl) {
       setErrorMessage('Por favor selecciona y sube primero un archivo de audio (WAV o MP3) de tu voz.');
@@ -273,11 +276,19 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
         apiToken: cloneMode === 'custom_endpoint' ? customApiToken : undefined,
       };
 
-      const res = await fetch('/api/voice-clone/synthesize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetchWithFallbackNotice(
+        '/api/voice-clone/synthesize',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        },
+        {
+          timeoutMs: 60000,
+          fallbackDelayMs: 8500,
+          onFallbackDelay: () => setFallbackStatus('Redirigiendo al motor de respaldo...'),
+        }
+      );
 
       const responseText = await res.text();
       let data: any = {};
@@ -331,6 +342,7 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
       setErrorMessage(err.message || 'Error al conectar con el motor de clonación.');
     } finally {
       setIsSynthesizing(false);
+      setFallbackStatus(null);
     }
   };
 
@@ -871,7 +883,7 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
               {isSynthesizing ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                  <span>Procesando clonación vocal con F5-TTS...</span>
+                  <span>{fallbackStatus || 'Procesando clonación vocal con F5-TTS...'}</span>
                 </>
               ) : (
                 <>

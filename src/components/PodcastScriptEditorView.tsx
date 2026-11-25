@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { PodcastScript } from '../types';
+import { fetchWithFallbackNotice } from '../utils/fetchWithTimeout';
 import { Sparkles, Wand2, Volume2, ArrowRight, Check, RefreshCw, FileText, Bot, Clock, Heart, Smile, Sparkle, Tag, CheckCircle2 } from 'lucide-react';
 
 interface PodcastScriptEditorViewProps {
@@ -36,6 +37,7 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
   const [scriptTitle, setScriptTitle] = useState('Episodio Piloto');
   const [generatedData, setGeneratedData] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [fallbackStatus, setFallbackStatus] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -59,6 +61,7 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
 
   const handleGenerateScript = async () => {
     setErrorMessage(null);
+    setFallbackStatus(null);
     if (!topic.trim()) {
       setErrorMessage('Por favor ingresa un tema o idea para el episodio antes de generar.');
       return;
@@ -68,17 +71,25 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
       setIsGenerating(true);
       setAnalysisResult(null);
 
-      const res = await fetch('/api/script/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic,
-          tone,
-          format,
-          hostName,
-          durationMinutes,
-        }),
-      });
+      const res = await fetchWithFallbackNotice(
+        '/api/script/generate',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic,
+            tone,
+            format,
+            hostName,
+            durationMinutes,
+          }),
+        },
+        {
+          timeoutMs: 60000,
+          fallbackDelayMs: 8500,
+          onFallbackDelay: () => setFallbackStatus('Redirigiendo al motor de respaldo...'),
+        }
+      );
 
       if (!res.ok) {
         const data = await res.json();
@@ -95,11 +106,13 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
       setErrorMessage('No se pudo generar el guion: ' + err.message);
     } finally {
       setIsGenerating(false);
+      setFallbackStatus(null);
     }
   };
 
   const handleAnalyzeProsody = async () => {
     setErrorMessage(null);
+    setFallbackStatus(null);
     if (!currentScriptText.trim()) {
       setErrorMessage('Ingresa o genera un texto antes de solicitar el análisis de prosodia.');
       return;
@@ -107,11 +120,19 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
 
     try {
       setIsAnalyzing(true);
-      const res = await fetch('/api/script/analyze-prosody', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scriptText: currentScriptText }),
-      });
+      const res = await fetchWithFallbackNotice(
+        '/api/script/analyze-prosody',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scriptText: currentScriptText }),
+        },
+        {
+          timeoutMs: 60000,
+          fallbackDelayMs: 8500,
+          onFallbackDelay: () => setFallbackStatus('Redirigiendo al motor de respaldo...'),
+        }
+      );
 
       if (!res.ok) {
         const data = await res.json();
@@ -124,11 +145,13 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
       setErrorMessage('Error en el análisis de prosodia: ' + err.message);
     } finally {
       setIsAnalyzing(false);
+      setFallbackStatus(null);
     }
   };
 
   const handleAnalyzeSentiment = async () => {
     setErrorMessage(null);
+    setFallbackStatus(null);
     if (!currentScriptText.trim()) {
       setErrorMessage('Ingresa o genera un texto antes de solicitar el análisis de sentimiento.');
       return;
@@ -136,11 +159,19 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
 
     try {
       setIsAnalyzingSentiment(true);
-      const res = await fetch('/api/script/analyze-sentiment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scriptText: currentScriptText }),
-      });
+      const res = await fetchWithFallbackNotice(
+        '/api/script/analyze-sentiment',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scriptText: currentScriptText }),
+        },
+        {
+          timeoutMs: 60000,
+          fallbackDelayMs: 8500,
+          onFallbackDelay: () => setFallbackStatus('Redirigiendo al motor de respaldo...'),
+        }
+      );
 
       if (!res.ok) {
         const data = await res.json();
@@ -153,6 +184,7 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
       setErrorMessage('Error en el análisis de sentimiento: ' + err.message);
     } finally {
       setIsAnalyzingSentiment(false);
+      setFallbackStatus(null);
     }
   };
 
@@ -178,6 +210,13 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
           el contenido para que tu voz clonada suene fresca, fluida y con respiraciones naturales.
         </p>
       </div>
+
+      {fallbackStatus && (
+        <div className="p-3 rounded-lg bg-indigo-950/50 border border-indigo-700/70 text-xs text-indigo-200 flex items-center gap-2.5">
+          <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400 shrink-0" />
+          <span>{fallbackStatus}</span>
+        </div>
+      )}
 
       {errorMessage && (
         <div className="p-3.5 rounded-lg bg-amber-950/40 border border-amber-800/80 text-xs text-amber-200 flex items-center justify-between gap-3">
@@ -279,7 +318,7 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
                 {isGenerating ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Redactando con Dirección Vocal...</span>
+                    <span>{fallbackStatus || 'Redactando con Dirección Vocal...'}</span>
                   </>
                 ) : (
                   <>
@@ -556,7 +595,11 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
                   ) : (
                     <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
                   )}
-                  <span>Analizar Sentimientos (Gemini)</span>
+                  <span>
+                    {isAnalyzingSentiment && fallbackStatus
+                      ? fallbackStatus
+                      : 'Analizar Sentimientos (Gemini)'}
+                  </span>
                 </button>
 
                 <button
@@ -570,7 +613,9 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
                   ) : (
                     <Volume2 className="w-3.5 h-3.5 text-neutral-400" />
                   )}
-                  <span>Prosodia Técnica</span>
+                  <span>
+                    {isAnalyzing && fallbackStatus ? fallbackStatus : 'Prosodia Técnica'}
+                  </span>
                 </button>
               </div>
 
