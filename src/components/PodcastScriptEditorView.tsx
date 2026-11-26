@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { PodcastScript } from '../types';
 import { fetchWithFallbackNotice } from '../utils/fetchWithTimeout';
-import { Sparkles, Wand2, Volume2, ArrowRight, Check, RefreshCw, FileText, Bot, Clock, Heart, Smile, Sparkle, Tag, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Wand2, Volume2, ArrowRight, Check, RefreshCw, FileText, Bot, Clock, Heart, Smile, Sparkle, Tag, CheckCircle2, Mic, MicOff } from 'lucide-react';
 
 interface PodcastScriptEditorViewProps {
   currentScriptText: string;
@@ -41,6 +41,202 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // Web Speech API Dictation State (es-AR with es-ES fallback)
+  const [speechSupported, setSpeechSupported] = useState<boolean>(false);
+  const [isDictating, setIsDictating] = useState<boolean>(false);
+  const [dictationLang, setDictationLang] = useState<'es-AR' | 'es-ES'>('es-AR');
+  const [interimTranscript, setInterimTranscript] = useState<string>('');
+  const [dictationNotice, setDictationNotice] = useState<string | null>(null);
+
+  const recognitionRef = useRef<any>(null);
+  const shouldKeepListeningRef = useRef<boolean>(false);
+  const latestScriptRef = useRef<string>(currentScriptText);
+  const cursorPosRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    latestScriptRef.current = currentScriptText;
+  }, [currentScriptText]);
+
+  useEffect(() => {
+    const ctor =
+      typeof window !== 'undefined'
+        ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        : null;
+    setSpeechSupported(Boolean(ctor));
+
+    return () => {
+      shouldKeepListeningRef.current = false;
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore cleanup errors
+        }
+        recognitionRef.current = null;
+      }
+    };
+  }, []);
+
+  const appendDictatedText = (spokenChunk: string) => {
+    const cleanChunk = spokenChunk.trim();
+    if (!cleanChunk) return;
+
+    const existing = latestScriptRef.current;
+    const rawPos = cursorPosRef.current;
+    const insertAt =
+      rawPos !== null && rawPos >= 0 && rawPos <= existing.length ? rawPos : existing.length;
+
+    const before = existing.slice(0, insertAt);
+    const after = existing.slice(insertAt);
+
+    const needsLeadingSpace = before.length > 0 && !/[\s\n]$/.test(before);
+    const needsTrailingSpace = after.length > 0 && !/^[\s\n.,;:!?]/.test(after);
+
+    const insertion = `${needsLeadingSpace ? ' ' : ''}${cleanChunk}${needsTrailingSpace ? ' ' : ''}`;
+    const updated = `${before}${insertion}${after}`;
+    const nextCursor = before.length + insertion.length;
+
+    latestScriptRef.current = updated;
+    cursorPosRef.current = nextCursor;
+    setCurrentScriptText(updated);
+
+    window.setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.setSelectionRange(nextCursor, nextCursor);
+      }
+    }, 10);
+  };
+
+  const startSpeechSession = (langToUse: 'es-AR' | 'es-ES') => {
+    const SpeechRecognitionCtor =
+      typeof window !== 'undefined'
+        ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        : null;
+
+    if (!SpeechRecognitionCtor) {
+      setSpeechSupported(false);
+      setIsDictating(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognitionCtor();
+      recognition.lang = langToUse;
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsDictating(true);
+        setDictationNotice(null);
+      };
+
+      recognition.onresult = (event: any) => {
+        let interim = '';
+        let finalText = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          const transcript = result?.[0]?.transcript || '';
+          if (result.isFinal) {
+            finalText += `${transcript} `;
+          } else {
+            interim += transcript;
+          }
+        }
+
+        setInterimTranscript(interim.trim());
+        if (finalText.trim()) {
+          appendDictatedText(finalText);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        const errCode = event?.error || '';
+
+        // Auto-fallback from es-AR to es-ES if regional code isn't supported
+        if (errCode === 'language-not-supported' && langToUse === 'es-AR') {
+          setDictationLang('es-ES');
+          setDictationNotice('Cambiando dictado al perfil español estándar (es-ES)...');
+          try {
+            recognition.stop();
+          } catch {
+            // ignore
+          }
+          window.setTimeout(() => {
+            if (shouldKeepListeningRef.current) {
+              startSpeechSession('es-ES');
+            }
+          }, 150);
+          return;
+        }
+
+        if (errCode === 'no-speech' || errCode === 'aborted') {
+          return;
+        }
+
+        shouldKeepListeningRef.current = false;
+        setIsDictating(false);
+        setInterimTranscript('');
+
+        if (errCode === 'not-allowed' || errCode === 'service-not-allowed') {
+          setDictationNotice(
+            'Permiso de micrófono denegado o bloqueado. Puedes seguir editando el guion manualmente sin problemas.'
+          );
+        } else if (errCode === 'audio-capture') {
+          setDictationNotice(
+            'No se detectó un micrófono activo. Puedes continuar escribiendo manualmente.'
+          );
+        } else {
+          setDictationNotice(
+            'El dictado por voz se detuvo temporalmente. Puedes continuar editando manualmente.'
+          );
+        }
+      };
+
+      recognition.onend = () => {
+        setInterimTranscript('');
+        if (shouldKeepListeningRef.current) {
+          try {
+            recognition.start();
+          } catch {
+            shouldKeepListeningRef.current = false;
+            setIsDictating(false);
+          }
+        } else {
+          setIsDictating(false);
+        }
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch {
+      shouldKeepListeningRef.current = false;
+      setIsDictating(false);
+      setDictationNotice('No se pudo iniciar el dictado por voz. La edición manual sigue disponible.');
+    }
+  };
+
+  const handleToggleDictation = () => {
+    if (isDictating) {
+      shouldKeepListeningRef.current = false;
+      setIsDictating(false);
+      setInterimTranscript('');
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+      return;
+    }
+
+    setDictationNotice(null);
+    shouldKeepListeningRef.current = true;
+    startSpeechSession(dictationLang);
+  };
+
   // Insert tag at current cursor position
   const insertTag = (tag: string) => {
     if (!textareaRef.current) return;
@@ -50,12 +246,15 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
     const text = currentScriptText;
 
     const newText = text.substring(0, start) + tag + text.substring(end);
+    const nextPos = start + tag.length;
+    cursorPosRef.current = nextPos;
+    latestScriptRef.current = newText;
     setCurrentScriptText(newText);
 
     // restore cursor
     setTimeout(() => {
       textarea.focus();
-      textarea.setSelectionRange(start + tag.length, start + tag.length);
+      textarea.setSelectionRange(nextPos, nextPos);
     }, 10);
   };
 
@@ -467,7 +666,49 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
                 className="text-base font-bold text-white bg-transparent border-none focus:outline-none placeholder-neutral-600"
               />
 
-              <div className="flex items-center gap-4 text-xs font-mono text-neutral-400 tabular-nums">
+              <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-neutral-400 tabular-nums">
+                {speechSupported ? (
+                  <div className="flex items-center gap-1.5 font-sans">
+                    <button
+                      type="button"
+                      onClick={handleToggleDictation}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-colors ${
+                        isDictating
+                          ? 'bg-rose-600 hover:bg-rose-500 border-rose-500 text-white'
+                          : 'bg-neutral-950 hover:bg-neutral-800 border-neutral-700 text-emerald-300 hover:text-emerald-200'
+                      }`}
+                      title="Dicta ideas o correcciones por micrófono sin borrar el guion actual"
+                    >
+                      {isDictating ? (
+                        <>
+                          <MicOff className="w-3.5 h-3.5 animate-pulse" />
+                          <span>Detener Dictado</span>
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="w-3.5 h-3.5" />
+                          <span>Dictar por Voz</span>
+                        </>
+                      )}
+                    </button>
+                    <select
+                      aria-label="Idioma de dictado"
+                      value={dictationLang}
+                      disabled={isDictating}
+                      onChange={(e) => setDictationLang(e.target.value as 'es-AR' | 'es-ES')}
+                      className="px-2 py-1.5 rounded-lg bg-neutral-950 border border-neutral-800 text-[11px] text-neutral-300 focus:outline-none disabled:opacity-60"
+                    >
+                      <option value="es-AR">es-AR</option>
+                      <option value="es-ES">es-ES</option>
+                    </select>
+                  </div>
+                ) : (
+                  <span className="text-[11px] font-sans text-neutral-500">
+                    Dictado por voz no disponible en este navegador
+                  </span>
+                )}
+
+                <span aria-hidden="true" className="hidden sm:inline">·</span>
                 <span>{charCount} caracteres</span>
                 <span aria-hidden="true">·</span>
                 <span className="flex items-center gap-1">
@@ -476,6 +717,29 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
                 </span>
               </div>
             </div>
+
+            {isDictating && (
+              <div className="px-3 py-2 rounded-lg bg-emerald-950/30 border border-emerald-800/60 text-xs text-emerald-200 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                <span className="font-medium shrink-0">Escuchando ({dictationLang}):</span>
+                <span className="text-emerald-100/80 italic truncate">
+                  {interimTranscript || 'Habla ahora para insertar tus ideas en el guion...'}
+                </span>
+              </div>
+            )}
+
+            {dictationNotice && (
+              <div className="px-3 py-2 rounded-lg bg-neutral-950 border border-neutral-800 text-[11px] text-neutral-400 flex items-center justify-between gap-2">
+                <span>{dictationNotice}</span>
+                <button
+                  type="button"
+                  onClick={() => setDictationNotice(null)}
+                  className="text-neutral-300 hover:text-white underline shrink-0"
+                >
+                  Ocultar
+                </button>
+              </div>
+            )}
 
             {/* Prosody & Emotion Tags Toolbar */}
             <div className="space-y-2">
@@ -573,7 +837,19 @@ export const PodcastScriptEditorView: React.FC<PodcastScriptEditorViewProps> = (
               <textarea
                 ref={textareaRef}
                 value={currentScriptText}
-                onChange={(e) => setCurrentScriptText(e.target.value)}
+                onChange={(e) => {
+                  cursorPosRef.current = e.target.selectionStart;
+                  setCurrentScriptText(e.target.value);
+                }}
+                onClick={(e) => {
+                  cursorPosRef.current = e.currentTarget.selectionStart;
+                }}
+                onKeyUp={(e) => {
+                  cursorPosRef.current = e.currentTarget.selectionStart;
+                }}
+                onSelect={(e) => {
+                  cursorPosRef.current = e.currentTarget.selectionStart;
+                }}
                 placeholder="Escribe tu guion aquí o haz clic en 'Generar Guion Estructurado' para comenzar..."
                 rows={14}
                 className="w-full p-4 rounded-lg bg-neutral-950 border border-neutral-800 text-sm leading-relaxed text-neutral-100 placeholder-neutral-600 focus:border-indigo-500 focus:outline-none font-mono selection:bg-indigo-900"
