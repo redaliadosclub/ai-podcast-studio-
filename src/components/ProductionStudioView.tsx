@@ -67,8 +67,8 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
   const [selectedSampleId, setSelectedSampleId] = useState<string>(() => {
     return samples.length > 0 ? samples[0].id : 'preset';
   });
-  const [f5RefText, setF5RefText] = useState<string>(
-    'Hay días en los que crees tener el control absoluto de las cosas... Hasta que, de pronto, una llamada telefónica de tres minutos lo cambia absolutamente todo.'
+  const [f5RefText, setF5RefText] = useState<string>(() =>
+    TELEPROMPTER_SCRIPTS[0].sentences.map((s) => s.text).join(' ')
   );
   const [f5Mode, setF5Mode] = useState<'app_direct' | 'custom_endpoint'>('app_direct');
   const [customEndpointUrl, setCustomEndpointUrl] = useState<string>('');
@@ -111,9 +111,24 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
     localStorage.setItem('voicelab_generated_episodes', JSON.stringify(serializable));
   }, [episodes]);
 
-  // Sync ref text when selected sample changes
+  // Auto-select first saved Paso 1 sample when samples appear or current selection was removed
   useEffect(() => {
-    if (selectedSampleId === 'preset' || selectedSampleId === 'upload') return;
+    if (
+      samples.length > 0 &&
+      selectedSampleId !== 'upload' &&
+      (selectedSampleId === 'preset' || !samples.some((s) => s.id === selectedSampleId))
+    ) {
+      setSelectedSampleId(samples[0].id);
+    }
+  }, [samples, selectedSampleId]);
+
+  // Sync ref text automatically from Paso 1 Teleprompter script whenever selected sample changes
+  useEffect(() => {
+    if (selectedSampleId === 'preset') {
+      setF5RefText(TELEPROMPTER_SCRIPTS[0].sentences.map((s) => s.text).join(' '));
+      return;
+    }
+    if (selectedSampleId === 'upload') return;
     const sample = samples.find((s) => s.id === selectedSampleId);
     if (sample) {
       const matchedScript = TELEPROMPTER_SCRIPTS.find((ts) => ts.id === sample.scriptId);
@@ -429,13 +444,22 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
 
   const handleDownloadColabNotebook = async () => {
     const refAudioBase64 = await getActiveSampleBase64();
+    const matchedSample = samples.find((s) => s.id === selectedSampleId);
+    const matchedScript = matchedSample
+      ? TELEPROMPTER_SCRIPTS.find((ts) => ts.id === matchedSample.scriptId)
+      : undefined;
+    const resolvedRefText =
+      f5RefText.trim() ||
+      (matchedScript ? matchedScript.sentences.map((s) => s.text).join(' ') : '') ||
+      TELEPROMPTER_SCRIPTS[0].sentences.map((s) => s.text).join(' ');
+
     await downloadColabNotebook({
-      refText: f5RefText,
+      refText: resolvedRefText,
       scriptText,
       scriptTitle,
       refAudioBase64,
     });
-    setSuccessNotice('Cuaderno Colab (.ipynb) descargado con tu muestra y texto.');
+    setSuccessNotice('Cuaderno Colab (.ipynb) en Español Nativo (F5-Spanish) descargado con tu muestra y texto de referencia.');
     window.setTimeout(() => setSuccessNotice(null), 3500);
   };
 

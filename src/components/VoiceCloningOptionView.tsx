@@ -72,9 +72,9 @@ export const VoiceCloningOptionView: React.FC<VoiceCloningOptionViewProps> = ({
   const [uploadedBlobUrl, setUploadedBlobUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Reference Text (Speech transcription of the 10-15s sample)
-  const [refText, setRefText] = useState<string>(
-    'Hay días en los que crees tener el control absoluto de las cosas... Hasta que, de pronto, una llamada telefónica de tres minutos lo cambia absolutamente todo.'
+  // Reference Text (Speech transcription of the Paso 1 sample)
+  const [refText, setRefText] = useState<string>(() =>
+    TELEPROMPTER_SCRIPTS[0].sentences.map((s) => s.text).join(' ')
   );
 
   // Target Text to Synthesize
@@ -252,13 +252,23 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
 
   const handleOpenColabWithConfig = async () => {
     const refAudioBase64 = await getActiveRefBase64();
+    const matchedSample =
+      sourceType === 'recorded' ? samples.find((x) => x.id === selectedSampleId) : undefined;
+    const matchedScript = matchedSample
+      ? TELEPROMPTER_SCRIPTS.find((ts) => ts.id === matchedSample.scriptId)
+      : undefined;
+    const resolvedRefText =
+      refText.trim() ||
+      (matchedScript ? matchedScript.sentences.map((s) => s.text).join(' ') : '') ||
+      TELEPROMPTER_SCRIPTS[0].sentences.map((s) => s.text).join(' ');
+
     await downloadColabNotebook({
-      refText,
+      refText: resolvedRefText,
       scriptText: targetText,
       scriptTitle: 'clonacion_zero_shot',
       refAudioBase64,
     });
-    setSuccessMessage('Cuaderno Colab (.ipynb) descargado con tu muestra y texto.');
+    setSuccessMessage('Cuaderno Colab (.ipynb) en Español Nativo (F5-Spanish) descargado con tu muestra y texto.');
   };
 
   // Trigger voice cloning synthesis
