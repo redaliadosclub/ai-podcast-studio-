@@ -4,7 +4,13 @@ import dotenv from 'dotenv';
 import path from 'path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { ThinkingLevel, Type } from '@google/genai';
+import {
+  executeWithGeminiPool,
+  extractStatusCode,
+  getGeminiPoolCount,
+  isQuotaError,
+} from './server/geminiPool.ts';
 import {
   PLANS_CATALOG,
   checkDatabaseHealth,
@@ -73,117 +79,28 @@ function isSafeExternalGpuUrl(rawUrl: string): boolean {
   }
 }
 
-function extractStatusCode(error: any): number | undefined {
-  if (typeof error?.status === 'number') return error.status;
-  if (typeof error?.code === 'number') return error.code;
-  if (typeof error?.statusCode === 'number') return error.statusCode;
-  const msg = String(error?.message || '');
-  const match = msg.match(/\b(400|403|404|408|429|500|502|503|504)\b/);
-  return match ? Number(match[1]) : undefined;
-}
-
-function isQuotaError(error: any): boolean {
-  const status = extractStatusCode(error);
-  const msg = String(error?.message || '').toLowerCase();
-  return (
-    status === 429 ||
-    msg.includes('429') ||
-    msg.includes('quota') ||
-    msg.includes('resource_exhausted') ||
-    msg.includes('rate limit')
-  );
-}
-
-function shouldFallbackModel(error: any): boolean {
-  const status = extractStatusCode(error);
-  const name = String(error?.name || '').toLowerCase();
-  const code = String(error?.code || '').toLowerCase();
-  const msg = String(error?.message || '').toLowerCase();
-
-  // Do not retry if the API key itself is invalid or missing
-  if (msg.includes('api_key_invalid') || msg.includes('api key not valid')) {
-    return false;
-  }
-
-  // Fallback immediately on availability, demand, quota, server, model-access, or timeout/abort errors
-  if (
-    status === 503 ||
-    status === 429 ||
-    status === 500 ||
-    status === 502 ||
-    status === 504 ||
-    status === 408 ||
-    status === 404 ||
-    status === 403 ||
-    status === 400
-  ) {
-    return true;
-  }
-
-  return (
-    name.includes('abort') ||
-    name.includes('timeout') ||
-    code.includes('timeout') ||
-    code.includes('etimedout') ||
-    code.includes('econnreset') ||
-    code.includes('econnaborted') ||
-    msg.includes('aborted') ||
-    msg.includes('unavailable') ||
-    msg.includes('overloaded') ||
-    msg.includes('high demand') ||
-    msg.includes('resource_exhausted') ||
-    msg.includes('quota') ||
-    msg.includes('rate limit') ||
-    msg.includes('internal') ||
-    msg.includes('timeout') ||
-    msg.includes('timed out') ||
-    msg.includes('deadline') ||
-    msg.includes('not found') ||
-    msg.includes('not supported') ||
-    msg.includes('permission') ||
-    msg.includes('access') ||
-    msg.includes('deprecated') ||
-    msg.includes('unknown model') ||
-    msg.includes('fetch failed')
-  );
-}
-
 async function generateTextWithFallback(params: {
   contents: string;
   systemInstruction: string;
   responseMimeType?: string;
   responseSchema?: any;
 }) {
-  let lastError: any;
-  for (let i = 0; i < TEXT_MODEL_CHAIN.length; i++) {
-    const { model, timeoutMs, thinkingLevel } = TEXT_MODEL_CHAIN[i];
-    try {
-      return await ai.models.generateContent({
-        model,
+  return executeWithGeminiPool(
+    TEXT_MODEL_CHAIN,
+    async (client, step) =>
+      client.models.generateContent({
+        model: step.model,
         contents: params.contents,
         config: {
           systemInstruction: params.systemInstruction,
-          abortSignal: AbortSignal.timeout(timeoutMs),
-          ...(thinkingLevel ? { thinkingConfig: { thinkingLevel } } : {}),
+          abortSignal: AbortSignal.timeout(step.timeoutMs),
+          ...(step.thinkingLevel ? { thinkingConfig: { thinkingLevel: step.thinkingLevel } } : {}),
           ...(params.responseMimeType ? { responseMimeType: params.responseMimeType } : {}),
           ...(params.responseSchema ? { responseSchema: params.responseSchema } : {}),
         },
-      });
-    } catch (error: any) {
-      lastError = error;
-      const hasNext = i < TEXT_MODEL_CHAIN.length - 1;
-      if (hasNext && shouldFallbackModel(error)) {
-        const nextModel = TEXT_MODEL_CHAIN[i + 1].model;
-        console.warn(
-          `[Fallback Texto] Modelo ${model} falló (${extractStatusCode(error) || error?.name || 'error'}, timeout ${timeoutMs}ms), reintentando al instante con ${nextModel}:`,
-          error?.message
-        );
-        continue;
-      }
-      throw error;
-    }
-  }
-  throw lastError;
+      }),
+    'Texto'
+  );
 }
 
 async function generateTtsWithFallback(params: {
@@ -191,16 +108,15 @@ async function generateTtsWithFallback(params: {
   voiceName: 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr';
   style?: string;
 }) {
-  let lastError: any;
-  for (let i = 0; i < TTS_MODEL_CHAIN.length; i++) {
-    const { model, timeoutMs } = TTS_MODEL_CHAIN[i];
-    const part: Record<string, any> = { text: params.text };
-    if (i === 0 && params.style) {
-      part.speechMetadata = { style: params.style };
-    }
-    try {
-      return await ai.models.generateContent({
-        model,
+  return executeWithGeminiPool(
+    TTS_MODEL_CHAIN,
+    async (client, step) => {
+      const part: Record<string, any> = { text: params.text };
+      if (step.model === 'gemini-3.8-flash-tts' && params.style) {
+        part.speechMetadata = { style: params.style };
+      }
+      return client.models.generateContent({
+        model: step.model,
         contents: [
           {
             role: 'user',
@@ -209,7 +125,7 @@ async function generateTtsWithFallback(params: {
         ],
         config: {
           responseModalities: ['AUDIO'],
-          abortSignal: AbortSignal.timeout(timeoutMs),
+          abortSignal: AbortSignal.timeout(step.timeoutMs),
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
@@ -219,21 +135,9 @@ async function generateTtsWithFallback(params: {
           },
         },
       });
-    } catch (error: any) {
-      lastError = error;
-      const hasNext = i < TTS_MODEL_CHAIN.length - 1;
-      if (hasNext && shouldFallbackModel(error)) {
-        const nextModel = TTS_MODEL_CHAIN[i + 1].model;
-        console.warn(
-          `[Fallback TTS] Modelo ${model} falló (${extractStatusCode(error) || error?.name || 'error'}, timeout ${timeoutMs}ms), reintentando con ${nextModel}:`,
-          error?.message
-        );
-        continue;
-      }
-      throw error;
-    }
-  }
-  throw lastError;
+    },
+    'TTS'
+  );
 }
 
 app.use(express.json({ limit: '50mb' }));
@@ -304,16 +208,6 @@ app.get('/api/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'ok' });
 });
 
-// Initialize Gemini API client on the server side
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    },
-  },
-});
-
 // Endpoint: Generate podcast script with voice directing markup
 app.post('/api/script/generate', async (req: Request, res: Response) => {
   try {
@@ -376,7 +270,13 @@ Duración objetivo: aproximadamente ${durationMinutes} minutos.`;
     const parsed = JSON.parse(rawText);
     return res.json(parsed);
   } catch (error: any) {
-    console.error('Error generating script:', error);
+    console.error('Error generating script:', error?.message);
+    if (isQuotaError(error)) {
+      return res.status(429).json({
+        error:
+          'Se agotó temporalmente la cuota disponible de las claves de Gemini API para generación de guiones. Intenta nuevamente en unos minutos.',
+      });
+    }
     const isAbortOrDemand =
       error?.name === 'AbortError' ||
       error?.name === 'TimeoutError' ||
@@ -430,7 +330,13 @@ Responde en formato JSON:
     const parsed = JSON.parse(rawText);
     return res.json(parsed);
   } catch (error: any) {
-    console.error('Error analyzing prosody:', error);
+    console.error('Error analyzing prosody:', error?.message);
+    if (isQuotaError(error)) {
+      return res.status(429).json({
+        error:
+          'Se agotó temporalmente la cuota disponible de las claves de Gemini API para el análisis de prosodia. Intenta nuevamente en unos minutos.',
+      });
+    }
     const isAbortOrDemand =
       error?.name === 'AbortError' ||
       error?.name === 'TimeoutError' ||
@@ -484,7 +390,13 @@ Debes devolver un objeto JSON con el siguiente esquema exacto:
     const parsed = JSON.parse(rawText);
     return res.json(parsed);
   } catch (error: any) {
-    console.error('Error analyzing script sentiment:', error);
+    console.error('Error analyzing script sentiment:', error?.message);
+    if (isQuotaError(error)) {
+      return res.status(429).json({
+        error:
+          'Se agotó temporalmente la cuota disponible de las claves de Gemini API para el análisis emocional. Intenta nuevamente en unos minutos.',
+      });
+    }
     const isAbortOrDemand =
       error?.name === 'AbortError' ||
       error?.name === 'TimeoutError' ||
@@ -993,7 +905,7 @@ app.post('/api/superadmin/login', (req: Request, res: Response) => {
   return res.json({ token, expiresAt });
 });
 
-// Superadmin dashboard (DB status + config + orders + licenses)
+// Superadmin dashboard (DB status + config + orders + licenses + Gemini key pool count)
 app.get('/api/superadmin/dashboard', requireSuperadmin, async (_req: Request, res: Response) => {
   try {
     const [dbStatus, config, orders, licenses] = await Promise.all([
@@ -1004,6 +916,7 @@ app.get('/api/superadmin/dashboard', requireSuperadmin, async (_req: Request, re
     ]);
     return res.json({
       dbStatus,
+      geminiPoolCount: getGeminiPoolCount(),
       config,
       orders,
       licenses,

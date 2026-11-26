@@ -36,6 +36,7 @@ export const SuperadminView: React.FC<SuperadminViewProps> = ({ onBackHome }) =>
 
   const [loadingDash, setLoadingDash] = useState(false);
   const [dbStatus, setDbStatus] = useState<DbHealthStatus | null>(null);
+  const [geminiPoolCount, setGeminiPoolCount] = useState<number | null>(null);
   const [config, setConfig] = useState<CommercialConfig>({
     paymentLinks: {
       creator: { mpUrl: '', globalUrl: '' },
@@ -106,6 +107,7 @@ export const SuperadminView: React.FC<SuperadminViewProps> = ({ onBackHome }) =>
       const data = await res.json();
       if (res.ok) {
         setDbStatus(data.dbStatus);
+        setGeminiPoolCount(typeof data.geminiPoolCount === 'number' ? data.geminiPoolCount : 0);
         setConfig(data.config);
         setOrders(data.orders || []);
         setLicenses(data.licenses || []);
@@ -405,6 +407,25 @@ export const SuperadminView: React.FC<SuperadminViewProps> = ({ onBackHome }) =>
             </span>
             <span>
               Base de datos: {dbStatus ? dbStatus.label : 'Verificando conexión...'}
+            </span>
+          </div>
+
+          {/* Secure Gemini API Key Pool Count Indicator */}
+          <div
+            className={`px-4 py-2 rounded-xl border text-xs font-medium flex items-center gap-2 ${
+              geminiPoolCount !== null && geminiPoolCount === 0
+                ? 'border-amber-800/70 bg-amber-950/40 text-amber-200'
+                : 'border-neutral-800 bg-neutral-900 text-neutral-200'
+            }`}
+          >
+            <span>🔑</span>
+            <span>
+              Pool Gemini API:{' '}
+              {geminiPoolCount === null
+                ? 'Verificando...'
+                : geminiPoolCount === 1
+                ? '1 clave activa'
+                : `${geminiPoolCount} claves activas`}
             </span>
           </div>
 
