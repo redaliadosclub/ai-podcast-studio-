@@ -452,6 +452,7 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
 import os
 from TTS.api import TTS
 os.environ["COQUI_TOS_AGREED"] = "1"
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
 tts.tts_to_file(
     text="Tu guion aquí...",
@@ -546,6 +547,7 @@ tts.tts_to_file(
 import os
 from TTS.api import TTS
 os.environ["COQUI_TOS_AGREED"] = "1"
+os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
 tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es", file_path="episodio_clonado.wav", split_sentences=True)`}
             </pre>
