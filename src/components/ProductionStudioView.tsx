@@ -22,6 +22,40 @@ interface ProductionStudioViewProps {
   whiteLabel?: boolean;
 }
 
+const REGIONAL_ACCENTS = [
+  {
+    id: 'neutral',
+    label: 'Español Neutro (Latinoamericano)',
+    stylePrompt: 'Natural, conversational Latin American neutral Spanish podcast host',
+  },
+  {
+    id: 'argentinian',
+    label: 'Argentino (Rioplatense)',
+    stylePrompt:
+      'Natural, warm Argentinian Rioplatense Spanish accent with Buenos Aires intonation and cadence, conversational podcast host',
+  },
+  {
+    id: 'mexican',
+    label: 'Mexicano',
+    stylePrompt: 'Natural, warm Mexican Spanish accent and intonation, conversational podcast host',
+  },
+  {
+    id: 'spanish_es',
+    label: 'Español (España / Castellano)',
+    stylePrompt: 'Natural Peninsular Castilian Spanish accent from Spain, conversational podcast host',
+  },
+  {
+    id: 'colombian',
+    label: 'Colombiano',
+    stylePrompt: 'Natural, melodic Colombian Spanish accent, warm conversational podcast host',
+  },
+  {
+    id: 'chilean',
+    label: 'Chileno',
+    stylePrompt: 'Natural Chilean Spanish accent and cadence, conversational podcast host',
+  },
+] as const;
+
 export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
   scriptText,
   scriptTitle,
@@ -59,8 +93,9 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
     };
   });
 
-  // Gemini TTS preview settings
+  // Gemini TTS Express settings (Studio voices + regional accents)
   const [geminiVoice, setGeminiVoice] = useState<'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr'>('Puck');
+  const [geminiAccent, setGeminiAccent] = useState<(typeof REGIONAL_ACCENTS)[number]['id']>('neutral');
   const [geminiStyle, setGeminiStyle] = useState('Conversational, warm podcast narrator');
 
   // F5-TTS / XTTS In-App Voice Cloning state
@@ -379,6 +414,12 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
       } else {
         // Gemini TTS Express (45s timeout for long scripts + clear notice)
         setFallbackStatus('Sintetizando audio en alta calidad, esto puede demorar unos segundos...');
+        const selectedAccentObj =
+          REGIONAL_ACCENTS.find((a) => a.id === geminiAccent) || REGIONAL_ACCENTS[0];
+        const combinedStyle = geminiStyle.trim()
+          ? `${selectedAccentObj.stylePrompt}. Delivery style: ${geminiStyle.trim()}`
+          : selectedAccentObj.stylePrompt;
+
         const res = await fetchWithFallbackNotice(
           '/api/tts/preview',
           {
@@ -387,7 +428,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
             body: JSON.stringify({
               text: scriptText,
               voiceName: geminiVoice,
-              style: geminiStyle,
+              style: combinedStyle,
             }),
           },
           {
@@ -608,7 +649,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
               : 'text-neutral-400 hover:text-white'
           }`}
         >
-          Gemini TTS (Preescucha Gratis)
+          Gemini TTS Express (Voces de Estudio)
         </button>
       </div>
 
@@ -703,8 +744,8 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
                     placeholder="Escribe exactamente lo que se dice en el audio de referencia..."
                     className="w-full p-2 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-300 text-xs focus:border-emerald-500 focus:outline-none leading-relaxed"
                   />
-                  <div className="p-2 bg-neutral-950 rounded border border-neutral-800/70 text-[11px] text-neutral-400 leading-normal mt-1">
-                    💡 <strong className="text-neutral-200">¿Por qué te salía en inglés antes?</strong> Porque el modelo F5-TTS necesita que este texto coincida palabra por palabra con lo que dices en el audio. Al estar en español, el sintetizador fuerza fonética hispanohablante.
+                  <div className="p-2.5 bg-neutral-950 rounded-lg border border-emerald-900/50 text-[11px] text-emerald-200/90 leading-relaxed mt-1">
+                    🎙️ La clonación conservará automáticamente el acento y la tonada natural con la que grabaste tu muestra en el Paso 1.
                   </div>
                 </div>
 
@@ -954,6 +995,10 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
                       className="w-full accent-indigo-500"
                     />
                   </div>
+
+                  <div className="p-2.5 bg-neutral-950 rounded-lg border border-indigo-900/50 text-[11px] text-indigo-200/90 leading-relaxed">
+                    🎙️ La clonación conservará automáticamente el acento y la tonada natural con la que grabaste tu muestra en el Paso 1.
+                  </div>
                 </div>
               </div>
             </div>
@@ -962,14 +1007,14 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
               <div className="flex items-center gap-2 pb-3 border-b border-neutral-800">
                 <Sparkles className="w-4 h-4 text-indigo-400" />
                 <h2 className="text-sm font-semibold text-white">
-                  Motor Nativo Gemini TTS
+                  Gemini TTS Express (Voces de Estudio)
                 </h2>
               </div>
 
               <div className="space-y-3.5 text-xs">
                 <div>
                   <label className="font-semibold text-neutral-300 block mb-1">
-                    Voz Base de Preescucha:
+                    Voz Base de Estudio:
                   </label>
                   <select
                     value={geminiVoice}
@@ -981,6 +1026,26 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
                     <option value="Kore">Kore (Femenina cálida y clara)</option>
                     <option value="Fenrir">Fenrir (Masculina resonante)</option>
                     <option value="Zephyr">Zephyr (Femenina dinámica)</option>
+                  </select>
+                </div>
+
+                {/* Regional accent selector ONLY shown in Gemini TTS Express */}
+                <div>
+                  <label className="font-semibold text-neutral-300 block mb-1">
+                    Acento y Tonada Regional:
+                  </label>
+                  <select
+                    value={geminiAccent}
+                    onChange={(e) =>
+                      setGeminiAccent(e.target.value as (typeof REGIONAL_ACCENTS)[number]['id'])
+                    }
+                    className="w-full p-2.5 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-200 focus:border-indigo-500 focus:outline-none"
+                  >
+                    {REGIONAL_ACCENTS.map((accent) => (
+                      <option key={accent.id} value={accent.id}>
+                        {accent.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -997,7 +1062,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
                 </div>
 
                 <div className="p-3 bg-neutral-950 rounded border border-neutral-800/80 text-neutral-400 text-[11px] leading-relaxed">
-                  Esta preescucha te permite evaluar la duración, las pausas y la naturalidad del texto
+                  Esta opción utiliza voces sintéticas de estudio para evaluar duración, pausas y acentos regionales
                   sin gastar tu cuota mensual de ElevenLabs.
                 </div>
               </div>
