@@ -500,7 +500,9 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
       scriptTitle,
       refAudioBase64,
     });
-    setSuccessNotice('Cuaderno Colab (.ipynb) en Español Nativo (F5-Spanish) descargado con tu muestra y texto de referencia.');
+    setSuccessNotice(
+      'Cuaderno Colab (.ipynb) con Coqui XTTS v2 en Español Nativo descargado con tu muestra y guion.'
+    );
     window.setTimeout(() => setSuccessNotice(null), 3500);
   };
 

@@ -294,10 +294,10 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                     <span className="text-[10px] text-emerald-400 font-mono">100% Gratis / En App</span>
                   </div>
                   <p className="text-xs text-neutral-400 leading-relaxed">
-                    Clonación Zero-Shot con tu muestra vocal en español. Genera directamente desde la app en el Paso 5 o mediante el cuaderno Colab reparado (sin errores de dependencias de numpy).
+                    Clonación Zero-Shot con tu muestra vocal en español. Genera desde un servidor GPU propio o mediante el cuaderno de Google Colab con Coqui XTTS v2 oficial (<code className="text-emerald-300">language=&quot;es&quot;</code>).
                   </p>
                   <div className="text-[11px] text-emerald-400 pt-2 border-t border-neutral-800">
-                    Alineación fonética en español integrada.
+                    Español nativo con pausas por oración.
                   </div>
                 </div>
 

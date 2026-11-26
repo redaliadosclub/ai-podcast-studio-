@@ -294,11 +294,11 @@ export async function downloadScriptPdf(params: {
 }
 
 function escapePythonTripleQuote(str: string): string {
-  return (str || '').replace(/\\/g, '\\\\').replace(/"""/g, '\\"\\"\\"');
+  return (str || '').replace(/\r\n?/g, '\n').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 export async function downloadColabNotebook(params: {
-  refText: string;
+  refText?: string;
   scriptText: string;
   scriptTitle?: string;
   refAudioBase64?: string | null;
@@ -308,18 +308,18 @@ export async function downloadColabNotebook(params: {
 
   const sampleSetupCode = hasEmbeddedSample
     ? [
-        '# Muestra vocal incrustada automáticamente desde tu estudio\n',
+        '# Muestra vocal del usuario incrustada automáticamente desde el estudio\n',
         'import base64\n',
         `ref_b64 = "${params.refAudioBase64}"\n`,
-        'with open("muestra_voz_referencia.wav", "wb") as f:\n',
+        'with open("muestra_voz.wav", "wb") as f:\n',
         '    f.write(base64.b64decode(ref_b64))\n',
-        'ref_audio = "muestra_voz_referencia.wav"\n',
-        'print("✅ Muestra de voz cargada: muestra_voz_referencia.wav")\n\n',
+        'ref_audio = "muestra_voz.wav"\n',
+        'print("✅ Muestra de voz cargada: muestra_voz.wav")\n\n',
       ]
     : [
-        '# Sube tu muestra WAV cuando Colab te lo pida\n',
+        '# Sube tu muestra WAV (muestra_voz.wav) cuando Colab te lo pida\n',
         'from google.colab import files\n',
-        'print("📂 Selecciona tu muestra WAV grabada en el Paso 1...")\n',
+        'print("📂 Selecciona tu muestra WAV (muestra_voz.wav) grabada en el Paso 1...")\n',
         'uploaded = files.upload()\n',
         'ref_audio = list(uploaded.keys())[0]\n\n',
       ];
@@ -337,11 +337,11 @@ export async function downloadColabNotebook(params: {
         cell_type: 'markdown',
         metadata: {},
         source: [
-          '# 🎙️ Clonación de Voz Zero-Shot en Español Nativo (F5-Spanish · GPU Gratis)\n',
-          'Cuaderno preconfigurado automáticamente con tu **muestra de voz**, su **texto de referencia exacto (Paso 1)** y tu **guion de podcast**.\n\n',
+          '# 🎙️ Clonación de Voz en Español Nativo (Coqui XTTS v2 · GPU Gratis)\n',
+          'Cuaderno preconfigurado automáticamente con tu **muestra de voz** (`muestra_voz.wav`) y tu **guion de podcast**.\n\n',
           '1. Activa GPU en Google Colab: **Entorno de ejecución > Cambiar tipo de entorno > T4 GPU**.\n',
-          '2. Ejecuta la **Celda 1** (si Colab pide reiniciar sesión, haz clic en *Reiniciar sesión* y pasa directo a la Celda 2).\n',
-          '3. Ejecuta la **Celda 2** para descargar `jpgallegoar/F5-Spanish`, clonar tu voz en español nativo y reproducir `episodio_clonado.wav`.',
+          '2. Ejecuta la **Celda 1** para instalar `coqui-tts` y `soundfile`.\n',
+          '3. Ejecuta la **Celda 2** para clonar tu voz en español nativo (`language="es"`), reproducir `episodio_clonado.wav` y descargarlo automáticamente.',
         ],
       },
       {
@@ -350,11 +350,9 @@ export async function downloadColabNotebook(params: {
         execution_count: null,
         outputs: [],
         source: [
-          '# Celda 1: Instalación compatible con Google Colab\n',
-          '!pip install -q --upgrade pip\n',
-          '!pip install -q "numpy<2.0.0" "gradio-client==1.11.0"\n',
-          '!pip install -q f5-tts torchaudio soundfile huggingface_hub\n',
-          'print("✅ Dependencias instaladas. Si Colab pide reiniciar sesión, reinicia y ejecuta la Celda 2.")',
+          '# Celda 1: Instalación limpia de Coqui XTTS v2\n',
+          '!pip install -q coqui-tts soundfile\n',
+          'print("✅ Coqui XTTS v2 instalado correctamente. Ejecuta ahora la Celda 2.")',
         ],
       },
       {
@@ -363,54 +361,38 @@ export async function downloadColabNotebook(params: {
         execution_count: null,
         outputs: [],
         source: [
-          '# Celda 2: Síntesis Zero-Shot en Español Nativo (jpgallegoar/F5-Spanish)\n',
+          '# Celda 2: Síntesis en Español Nativo y ritmo natural (Coqui XTTS v2)\n',
+          'import os\n',
           'import re\n',
           'import torch\n',
-          'import soundfile\n',
-          'import IPython.display as ipd\n',
-          'from huggingface_hub import hf_hub_download\n',
-          'from f5_tts.api import F5TTS\n\n',
+          'from IPython.display import Audio, display\n',
+          'from TTS.api import TTS\n\n',
+          'os.environ["COQUI_TOS_AGREED"] = "1"\n',
+          'os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"\n\n',
           ...sampleSetupCode,
-          `raw_ref_text = """${escapePythonTripleQuote(params.refText)}"""\n`,
-          'ref_text = re.sub(r"\\[[^\\]]+\\]", " ", raw_ref_text)\n',
-          'ref_text = re.sub(r"\\s+", " ", ref_text).strip()\n\n',
           `raw_script = """${escapePythonTripleQuote(params.scriptText)}"""\n`,
           '# Limpia etiquetas entre corchetes ([Entusiasta], [Pausa reflexiva 1s], etc.) y marcas vocales (<breath>, <laugh>)\n',
-          'gen_text = re.sub(r"\\[[^\\]]+\\]", " ", raw_script)\n',
-          'gen_text = re.sub(r"<[^>]+>", " ", gen_text)\n',
-          'gen_text = re.sub(r"\\s+", " ", gen_text).strip()\n\n',
-          'print("⬇️ Descargando modelo en español nativo (hf://jpgallegoar/F5-Spanish)...")\n',
-          'ckpt_file = hf_hub_download(\n',
-          '    repo_id="jpgallegoar/F5-Spanish",\n',
-          '    filename="model_1200000.safetensors",\n',
-          ')\n',
-          'vocab_file = hf_hub_download(\n',
-          '    repo_id="jpgallegoar/F5-Spanish",\n',
-          '    filename="vocab.txt",\n',
-          ')\n\n',
+          'gen_text_limpio = re.sub(r"\\[[^\\]]+\\]", " ", raw_script)\n',
+          'gen_text_limpio = re.sub(r"<[^>]+>", " ", gen_text_limpio)\n',
+          'gen_text_limpio = re.sub(r"\\s+", " ", gen_text_limpio).strip()\n\n',
           'device = "cuda" if torch.cuda.is_available() else "cpu"\n',
-          'try:\n',
-          '    f5tts = F5TTS(\n',
-          '        model="F5TTS_Base",\n',
-          '        ckpt_file=ckpt_file,\n',
-          '        vocab_file=vocab_file,\n',
-          '        device=device,\n',
-          '    )\n',
-          'except Exception:\n',
-          '    f5tts = F5TTS(\n',
-          '        ckpt_file=ckpt_file,\n',
-          '        vocab_file=vocab_file,\n',
-          '        device=device,\n',
-          '    )\n\n',
-          'print("⏳ Sintetizando audio clonado en español nativo...")\n',
-          'wav, sr, _ = f5tts.infer(\n',
-          '    ref_file=ref_audio,\n',
-          '    ref_text=ref_text,\n',
-          '    gen_text=gen_text,\n',
-          ')\n',
-          'soundfile.write("episodio_clonado.wav", wav, sr)\n',
+          'print(f"⬇️ Cargando modelo oficial Coqui XTTS v2 en {device.upper()}...")\n',
+          'tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)\n\n',
+          'print("⏳ Sintetizando audio en español nativo con pausas naturales...")\n',
+          'tts.tts_to_file(\n',
+          '    text=gen_text_limpio,\n',
+          '    speaker_wav=ref_audio,\n',
+          '    language="es",\n',
+          '    file_path="episodio_clonado.wav",\n',
+          '    split_sentences=True,\n',
+          ')\n\n',
           'print("✨ ¡Audio clonado listo en episodio_clonado.wav!")\n',
-          'ipd.Audio("episodio_clonado.wav")\n',
+          'display(Audio("episodio_clonado.wav"))\n\n',
+          'try:\n',
+          '    from google.colab import files\n',
+          '    files.download("episodio_clonado.wav")\n',
+          'except Exception:\n',
+          '    pass\n',
         ],
       },
     ],
@@ -421,6 +403,6 @@ export async function downloadColabNotebook(params: {
   });
   await triggerBlobDownload(
     blob,
-    `clonador_f5tts_${sanitizeFilename(params.scriptTitle || 'podcast', 'podcast')}.ipynb`
+    `clonador_xtts_es_${sanitizeFilename(params.scriptTitle || 'podcast', 'podcast')}.ipynb`
   );
 }

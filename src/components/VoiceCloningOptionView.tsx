@@ -268,7 +268,9 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
       scriptTitle: 'clonacion_zero_shot',
       refAudioBase64,
     });
-    setSuccessMessage('Cuaderno Colab (.ipynb) en Español Nativo (F5-Spanish) descargado con tu muestra y texto.');
+    setSuccessMessage(
+      'Cuaderno Colab (.ipynb) con Coqui XTTS v2 en Español Nativo descargado con tu muestra y guion.'
+    );
   };
 
   // Trigger voice cloning synthesis
@@ -443,15 +445,21 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
   };
 
   const copyColabFix = () => {
-    const text = `# Solución limpia para F5-TTS en Google Colab sin conflictos de numpy
-!pip install --upgrade pip
-!pip install "numpy<2.0.0" "gradio-client==1.11.0"
-!pip install f5-tts --no-deps
-!pip install vocos einx encodec torchdiffeq ema-pytorch transformers==4.46.3
+    const text = `# Celda 1: Instalación limpia de Coqui XTTS v2 en Google Colab
+!pip install -q coqui-tts soundfile
 
-# Para síntesis en ESPAÑOL (evita que responda en inglés):
-# Usa el checkpoint español:
-# --model "f5-tts-spanish" o pasa el argumento --language "es"`;
+# Celda 2: Síntesis en Español Nativo (language="es")
+import os
+from TTS.api import TTS
+os.environ["COQUI_TOS_AGREED"] = "1"
+tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
+tts.tts_to_file(
+    text="Tu guion aquí...",
+    speaker_wav="muestra_voz.wav",
+    language="es",
+    file_path="episodio_clonado.wav",
+    split_sentences=True
+)`;
     navigator.clipboard.writeText(text);
     setCopiedSnippet(true);
     setTimeout(() => setCopiedSnippet(false), 2500);
@@ -465,13 +473,13 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
           <div>
             <div className="text-xs text-indigo-400 font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>OPCIÓN C · CLONACIÓN F5-TTS DIRECTA EN LA APP</span>
+              <span>OPCIÓN C · CLONACIÓN ZERO-SHOT EN ESPAÑOL (COQUI XTTS v2)</span>
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-white mb-2">
-              Laboratorio de Clonación In-App (F5-TTS)
+              Laboratorio de Clonación Zero-Shot (XTTS v2 / GPU)
             </h1>
             <p className="text-sm text-neutral-400 max-w-2xl leading-relaxed">
-              Graba o selecciona una muestra de voz de 10 a 15 segundos y clónala directamente dentro de la plataforma sin necesidad de registrarte en servicios de pago externos.
+              Graba o selecciona una muestra de voz de 10 a 15 segundos y clónala con pronunciación nativa en español usando Coqui XTTS v2 en Google Colab GPU o tu propio servidor.
             </p>
           </div>
 
@@ -481,13 +489,13 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
               className="px-3.5 py-2 text-xs font-medium text-neutral-300 hover:text-white bg-neutral-950 border border-neutral-800 rounded-lg transition-colors flex items-center gap-2"
             >
               <Terminal className="w-3.5 h-3.5 text-amber-400" />
-              <span>Fix Colab / Notebook</span>
+              <span>Guía Colab XTTS v2</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Accordion: Colab / F5-TTS Dependency Fix */}
+      {/* Accordion: Colab / Coqui XTTS v2 Guide */}
       {showColabGuide && (
         <div className="border border-amber-900/50 bg-amber-950/20 rounded-xl p-6 space-y-4">
           <div className="flex items-start justify-between gap-4">
@@ -495,10 +503,10 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
               <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
               <div>
                 <h3 className="text-sm font-bold text-amber-300">
-                  ¿Por qué fallaba el Notebook `Spanish-F5.ipynb` o devolvía audio en inglés?
+                  Clonación Nativa en Español con Coqui XTTS v2 (`language=&quot;es&quot;`)
                 </h3>
                 <p className="text-xs text-neutral-300 mt-1 leading-relaxed">
-                  Google Colab actualizó recientemente su entorno a <strong>numpy 2.x</strong>, mientras que <code>f5-tts</code> requiere <strong>numpy 1.26.4</strong>. Cuando pip intenta resolverlos, lanza advertencias de incompatibilidad y pide reiniciar el entorno (<em>&quot;You must restart the runtime&quot;</em>). Además, si no se especifica el modelo en español o el idioma <code>es</code>, F5-TTS usa por defecto los pesos en inglés/mandarín.
+                  El cuaderno descargable utiliza el modelo oficial <strong>Coqui XTTS v2</strong> (<code>tts_models/multilingual/multi-dataset/xtts_v2</code>) con <code>language=&quot;es&quot;</code> y <code>split_sentences=True</code> para respetar las pausas de cada oración y evitar fonemas acelerados o en inglés.
                 </p>
               </div>
             </div>
@@ -512,7 +520,7 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
 
           <div className="bg-neutral-950 p-4 rounded-lg border border-neutral-800 text-xs font-mono space-y-2">
             <div className="flex items-center justify-between text-neutral-400 pb-2 border-b border-neutral-800">
-              <span>Celda corregida para Colab (copiar y pegar al inicio del notebook):</span>
+              <span>Referencia rápida Coqui XTTS v2 para Google Colab:</span>
               <button
                 onClick={copyColabFix}
                 className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-sans font-medium"
@@ -531,13 +539,15 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
               </button>
             </div>
             <pre className="text-neutral-300 whitespace-pre-wrap text-[11px] leading-relaxed">
-{`# 1. Instalar dependencias limpias con numpy 1.x
-!pip install -q "numpy<2.0.0" "gradio-client==1.11.0"
-!pip install -q f5-tts --no-deps
-!pip install -q vocos einx encodec torchdiffeq ema-pytorch transformers==4.46.3
+{`# Celda 1: Instalación limpia
+!pip install -q coqui-tts soundfile
 
-# 2. Reiniciar entorno (Runtime > Restart session) y correr inferencia en español con el modelo:
-# f5tts_infer-cli --model "f5-tts-spanish" --ref_audio "tu_muestra.wav" --ref_text "..." --gen_text "..."`}
+# Celda 2: Síntesis en Español Nativo
+import os
+from TTS.api import TTS
+os.environ["COQUI_TOS_AGREED"] = "1"
+tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
+tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es", file_path="episodio_clonado.wav", split_sentences=True)`}
             </pre>
           </div>
           <p className="text-xs text-neutral-400">
