@@ -5,9 +5,8 @@ export interface FetchWithFallbackOptions {
 }
 
 /**
- * Performs a fetch request with a generous timeout (default 60s) so the browser
- * does not abort prematurely while the backend transitions to fallback AI models.
- * Triggers `onFallbackDelay` after ~8.5s to inform the user.
+ * Performs a fetch request with a configurable timeout (default 60s) so the browser
+ * does not abort prematurely while the backend completes synthesis or fallback.
  */
 export async function fetchWithFallbackNotice(
   input: RequestInfo | URL,
@@ -34,8 +33,9 @@ export async function fetchWithFallbackNotice(
     return response;
   } catch (error: any) {
     if (error?.name === 'AbortError') {
+      const secs = Math.round(timeoutMs / 1000);
       throw new Error(
-        'La operación superó el tiempo máximo de espera (60s). Por favor, inténtalo de nuevo.'
+        `La operación superó el tiempo máximo de espera (${secs}s). Por favor, inténtalo de nuevo.`
       );
     }
     throw error;

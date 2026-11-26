@@ -2,14 +2,23 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ElevenLabsSettings, GeneratedEpisodeAudio, RecordedSample } from '../types';
 import { TELEPROMPTER_SCRIPTS } from '../data/teleprompterScripts';
 import { fetchWithFallbackNotice } from '../utils/fetchWithTimeout';
+import {
+  downloadColabNotebook,
+  downloadScriptPdf,
+  downloadScriptTxt,
+  sanitizeFilename,
+  triggerBlobDownload,
+} from '../utils/exportHelpers';
 import { Play, Pause, Download, Sliders, Key, Mic, RefreshCw, Sparkles, CheckCircle2, AlertCircle, FileDown, FileText, FastForward, Copy, ExternalLink, Code, Upload, Volume2, Globe, Radio } from 'lucide-react';
-import { jsPDF } from 'jspdf';
 
 interface ProductionStudioViewProps {
   scriptText: string;
   scriptTitle: string;
   samples?: RecordedSample[];
   onGoToEditor: () => void;
+  initialEngine?: 'elevenlabs' | 'gemini' | 'f5tts';
+  hasServerGpu?: boolean;
+  whiteLabel?: boolean;
 }
 
 export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
@@ -17,9 +26,17 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
   scriptTitle,
   samples = [],
   onGoToEditor,
+  initialEngine = 'f5tts',
+  hasServerGpu = false,
+  whiteLabel = false,
 }) => {
   // Engine Selection: ElevenLabs vs Gemini TTS vs F5-TTS / XTTS Open Source
-  const [engine, setEngine] = useState<'elevenlabs' | 'gemini' | 'f5tts'>('f5tts');
+  const [engine, setEngine] = useState<'elevenlabs' | 'gemini' | 'f5tts'>(initialEngine);
+  const elevenLabsApiKeyRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setEngine(initialEngine);
+  }, [initialEngine]);
 
   // ElevenLabs Configuration state
   const [settings, setSettings] = useState<ElevenLabsSettings>(() => {
@@ -181,12 +198,29 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
     return null;
   };
 
+  const hasConfiguredGpu =
+    Boolean(hasServerGpu) ||
+    (f5Mode === 'custom_endpoint' && customEndpointUrl.trim().length > 0);
+
+  const handleSwitchToElevenLabs = () => {
+    setErrorMessage(null);
+    setEngine('elevenlabs');
+    window.setTimeout(() => elevenLabsApiKeyRef.current?.focus(), 80);
+  };
+
   const handleSynthesize = async () => {
     setErrorMessage(null);
     setSuccessNotice(null);
     setFallbackStatus(null);
     if (!scriptText.trim()) {
       setErrorMessage('No hay texto en el guion. Ve a la pestaña Editor de Guiones para escribirlo o generarlo.');
+      return;
+    }
+
+    if (engine === 'f5tts' && !hasConfiguredGpu) {
+      setErrorMessage(
+        'No hay una GPU externa configurada en el servidor. Usa "Abrir en Google Colab (GPU Gratis 1-Clic)" o "Usar mi API Key de ElevenLabs" abajo.'
+      );
       return;
     }
 
@@ -255,7 +289,6 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
         setEpisodes((prev) => [newEpisode, ...prev]);
         setSuccessNotice('¡Episodio generado con éxito en ElevenLabs!');
       } else if (engine === 'f5tts') {
-        // F5-TTS / XTTS Open-Source Voice Cloning Studio (Option C)
         const refAudioB64 = await getActiveSampleBase64();
 
         const res = await fetchWithFallbackNotice(
@@ -273,9 +306,10 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
             }),
           },
           {
-            timeoutMs: 60000,
+            timeoutMs: 45000,
             fallbackDelayMs: 8500,
-            onFallbackDelay: () => setFallbackStatus('Redirigiendo al motor de respaldo...'),
+            onFallbackDelay: () =>
+              setFallbackStatus('Sintetizando audio clonado en GPU externa...'),
           }
         );
 
@@ -290,12 +324,6 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
         }
 
         if (!res.ok) {
-          if (res.status === 429 || data.quotaExceeded) {
-            throw new Error(
-              data.error ||
-                'Se alcanzó el límite diario gratuito de Gemini TTS (10 peticiones/día). Te recomendamos seleccionar el motor ElevenLabs arriba para clonar tu voz real sin límites.'
-            );
-          }
           throw new Error(data.error || 'Error en la síntesis de voz.');
         }
 
@@ -315,15 +343,13 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
           durationSec: Math.round(scriptText.split(/\s+/).length / 2.2),
           audioUrl,
           engineUsed: 'F5-TTS / XTTS',
-          modelOrVoice:
-            f5Mode === 'custom_endpoint'
-              ? 'Endpoint GPU F5-TTS'
-              : 'Studio Neural Español (Zero-Shot)',
+          modelOrVoice: 'Endpoint GPU F5-TTS',
         };
         setEpisodes((prev) => [newEpisode, ...prev]);
         setSuccessNotice('¡Podcast generado en español con tu muestra vocal!');
       } else {
-        // Gemini Audio Preview engine
+        // Gemini TTS Express (45s timeout for long scripts + clear notice)
+        setFallbackStatus('Sintetizando audio en alta calidad, esto puede demorar unos segundos...');
         const res = await fetchWithFallbackNotice(
           '/api/tts/preview',
           {
@@ -336,9 +362,10 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
             }),
           },
           {
-            timeoutMs: 60000,
-            fallbackDelayMs: 8500,
-            onFallbackDelay: () => setFallbackStatus('Redirigiendo al motor de respaldo...'),
+            timeoutMs: 45000,
+            fallbackDelayMs: 5000,
+            onFallbackDelay: () =>
+              setFallbackStatus('Sintetizando audio en alta calidad, esto puede demorar unos segundos...'),
           }
         );
 
@@ -382,102 +409,16 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
     setTimeout(() => setHasCopiedScript(false), 2500);
   };
 
-  const handleDownloadColabNotebook = () => {
-    const notebook = {
-      nbformat: 4,
-      nbformat_minor: 0,
-      metadata: {
-        colab: { provenance: [] },
-        language_info: { name: 'python' },
-        accelerator: 'GPU',
-      },
-      cells: [
-        {
-          cell_type: 'markdown',
-          metadata: {},
-          source: [
-            '# 🎙️ Clonación de Voz 100% en ESPAÑOL con F5-TTS y XTTS v2\n',
-            'Este cuaderno soluciona las dependencias de Google Colab (evitando conflictos de numpy) y garantiza que el audio se genere **100% en español** mediante la transcripción fonética correspondiente.\n\n',
-            '### ⚠️ PASO CRÍTICO DE DEPENDENCIAS EN COLAB:\n',
-            'Al instalar paquetes en Colab, es normal ver advertencias de `numpy`. Si ves el mensaje:\n',
-            '> *WARNING: You must restart the runtime in order to use newly installed versions.*\n\n',
-            'Simplemente ve al menú superior: **Entorno de ejecución > Reiniciar sesión** (*Runtime > Restart session*) y ejecuta la celda 2 sin volver a ejecutar la celda 1.',
-          ],
-        },
-        {
-          cell_type: 'code',
-          metadata: {},
-          execution_count: null,
-          outputs: [],
-          source: [
-            '# Celda 1: Instalación limpia de dependencias para F5-TTS\n',
-            '!pip install -q --upgrade pip\n',
-            '!pip install -q f5-tts torchaudio soundfile gradio\n',
-            'print("✅ Dependencias instaladas. Si Colab te pide reiniciar la sesión, dale a Entorno de ejecución > Reiniciar sesión.")',
-          ],
-        },
-        {
-          cell_type: 'code',
-          metadata: {},
-          execution_count: null,
-          outputs: [],
-          source: [
-            '# Celda 2: Generación del Podcast en ESPAÑOL con tu voz\n',
-            'from f5_tts.api import F5TTS\n',
-            'import IPython.display as ipd\n\n',
-            '# Inicializar motor\n',
-            'f5tts = F5TTS()\n\n',
-            '# Sube tu muestra WAV (ej. muestra_narrativa.wav) al panel izquierdo de Colab\n',
-            'ref_audio = "muestra_narrativa.wav"\n\n',
-            '# IMPORTANTE: El texto de referencia debe estar escrito EXACTAMENTE en español tal como lo dijiste en el audio:\n',
-            `ref_text = "${f5RefText.replace(/"/g, '\\"')}"\n\n`,
-            '# Tu guion de podcast a sintetizar:\n',
-            `gen_text = """${scriptText.replace(/"/g, '\\"')}"""\n\n`,
-            'print("⏳ Sintetizando audio en español con F5-TTS...")\n',
-            'wav, sr, _ = f5tts.infer(\n',
-            '    ref_file=ref_audio,\n',
-            '    ref_text=ref_text,\n',
-            '    gen_text=gen_text,\n',
-            '    file_wave_name="podcast_espanol_master.wav"\n',
-            ')\n\n',
-            'print("✨ ¡Podcast en español generado con éxito en podcast_espanol_master.wav!")\n',
-            'ipd.Audio("podcast_espanol_master.wav")',
-          ],
-        },
-        {
-          cell_type: 'markdown',
-          metadata: {},
-          source: [
-            '## 🌟 Alternativa Nativa en Español: Coqui XTTS v2\n',
-            'Si prefieres un modelo nativamente entrenado para español de España y Latinoamérica sin necesidad de alinear texto de referencia:',
-          ],
-        },
-        {
-          cell_type: 'code',
-          metadata: {},
-          execution_count: null,
-          outputs: [],
-          source: [
-            '# Alternativa XTTS v2 (Nativo Español)\n',
-            '# !pip install -q TTS\n',
-            '# from TTS.api import TTS\n',
-            '# tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")\n',
-            '# tts.tts_to_file(text=gen_text, speaker_wav=ref_audio, language="es", file_path="podcast_xtts_es.wav")\n',
-            '# ipd.Audio("podcast_xtts_es.wav")',
-          ],
-        },
-      ],
-    };
-
-    const blob = new Blob([JSON.stringify(notebook, null, 2)], {
-      type: 'application/json',
+  const handleDownloadColabNotebook = async () => {
+    const refAudioBase64 = await getActiveSampleBase64();
+    downloadColabNotebook({
+      refText: f5RefText,
+      scriptText,
+      scriptTitle,
+      refAudioBase64,
     });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `clonador_espanol_${(scriptTitle || 'podcast').toLowerCase().replace(/\s+/g, '_')}.ipynb`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setSuccessNotice('Cuaderno Colab (.ipynb) descargado con tu muestra y texto.');
+    window.setTimeout(() => setSuccessNotice(null), 3500);
   };
 
   const handleDownloadTxt = () => {
@@ -485,27 +426,13 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
       setErrorMessage('No hay texto en el guion para exportar.');
       return;
     }
-    const cleanTitle = (scriptTitle || 'guion_podcast').trim();
-    const divider = '==================================================';
-    const content = `${divider}
-VOICELAB COACH · GUION DE PODCAST PARA CLONACIÓN
-${divider}
-Título: ${cleanTitle}
-Fecha: ${new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })}
-Longitud: ${scriptText.length} caracteres
-Duración estimada: ~${Math.round(scriptText.split(/\s+/).length / 2.2)} seg
-${divider}
-
-${scriptText}
-`;
-
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${cleanTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}_guion.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadScriptTxt({
+      scriptText,
+      scriptTitle,
+      brandName: whiteLabel ? 'Estudio Vocal' : 'VoiceLab Coach',
+    });
+    setSuccessNotice('Guion descargado en .TXT correctamente.');
+    window.setTimeout(() => setSuccessNotice(null), 2500);
   };
 
   const handleDownloadPdf = () => {
@@ -515,104 +442,13 @@ ${scriptText}
     }
 
     try {
-      const doc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
+      downloadScriptPdf({
+        scriptText,
+        scriptTitle,
+        brandName: whiteLabel ? 'Estudio Vocal' : 'VoiceLab Coach',
       });
-
-      const title = scriptTitle || 'Guion de Podcast';
-      const cleanTitle = title.trim();
-      const dateStr = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
-      const wordCount = scriptText.trim().split(/\s+/).filter(Boolean).length;
-      const durationSec = Math.round(wordCount / 2.2);
-      const estMin = Math.floor(durationSec / 60);
-      const estSec = durationSec % 60;
-
-      // Header Bar
-      doc.setFillColor(15, 23, 42); // slate-900
-      doc.rect(0, 0, 210, 24, 'F');
-
-      // Studio label
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(129, 140, 248); // indigo-400
-      doc.text('VOICELAB COACH · GUION MAESTRO PARA LOCUCIÓN', 14, 9);
-
-      // Title in header
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(13);
-      doc.setTextColor(255, 255, 255);
-      doc.text(cleanTitle.slice(0, 50), 14, 18);
-
-      // Meta info banner
-      doc.setFillColor(241, 245, 249); // slate-100
-      doc.rect(0, 24, 8, 8, 'F');
-      doc.rect(0, 24, 210, 8, 'F');
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(71, 85, 105); // slate-600
-      doc.text(
-        `Fecha: ${dateStr}   |   ${wordCount} palabras   |   Duración estimada: ~${estMin}m ${estSec}s   |   Marcadores de prosodia incluidos`,
-        14,
-        29.5
-      );
-
-      // Script Text Body
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 14;
-      const maxWidth = pageWidth - margin * 2;
-
-      const paragraphs = scriptText.split('\n');
-      let y = 39;
-      const lineHeight = 6;
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-
-      for (const para of paragraphs) {
-        if (!para.trim()) {
-          y += 3.5;
-          continue;
-        }
-
-        const lines = doc.splitTextToSize(para, maxWidth);
-        for (const line of lines) {
-          if (y + lineHeight > pageHeight - 16) {
-            doc.addPage();
-            y = 18;
-          }
-
-          if (line.includes('[') && line.includes(']')) {
-            doc.setTextColor(79, 70, 229); // indigo-600
-            doc.setFont('helvetica', 'bold');
-          } else {
-            doc.setTextColor(30, 41, 59); // slate-800
-            doc.setFont('helvetica', 'normal');
-          }
-
-          doc.text(line, margin, y);
-          y += lineHeight;
-        }
-        y += 2;
-      }
-
-      // Footer page numbering
-      const totalPages = doc.getNumberOfPages();
-      for (let i = 1; i <= totalPages; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.setTextColor(148, 163, 184);
-        doc.text(
-          `Página ${i} de ${totalPages} · VoiceLab Coach`,
-          pageWidth / 2,
-          pageHeight - 7,
-          { align: 'center' }
-        );
-      }
-
-      doc.save(`${cleanTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}_guion.pdf`);
+      setSuccessNotice('Guion maquetado descargado en .PDF correctamente.');
+      window.setTimeout(() => setSuccessNotice(null), 2500);
     } catch (err: any) {
       console.error('Error generating PDF:', err);
       setErrorMessage('Error al generar el PDF: ' + (err?.message || 'Error desconocido'));
@@ -620,18 +456,17 @@ ${scriptText}
   };
 
   const handleDownloadMd = () => {
+    if (!scriptText.trim()) {
+      setErrorMessage('No hay texto en el guion para exportar.');
+      return;
+    }
     const blob = new Blob(
       [
         `# ${scriptTitle || 'Episodio de Podcast'}\nFecha: ${new Date().toLocaleDateString()}\n\n${scriptText}`,
       ],
       { type: 'text/markdown;charset=utf-8' }
     );
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(scriptTitle || 'episodio').toLowerCase().replace(/\s+/g, '_')}_guion.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerBlobDownload(blob, `${sanitizeFilename(scriptTitle || 'episodio')}_guion.md`);
   };
 
   const activeSample = samples.find((s) => s.id === selectedSampleId);
@@ -875,18 +710,54 @@ ${scriptText}
                   )}
                 </div>
 
+                {/* Immediate GPU Notice when no external GPU is configured */}
+                {!hasConfiguredGpu && (
+                  <div className="p-4 rounded-xl border border-amber-500/50 bg-amber-950/30 space-y-3">
+                    <div className="space-y-1">
+                      <div className="text-xs font-bold text-amber-200">
+                        Sin GPU externa configurada en el servidor
+                      </div>
+                      <p className="text-[11px] text-amber-100/80 leading-relaxed">
+                        La clonación Zero-Shot F5-TTS requiere GPU dedicada. Ejecuta tu audio al instante con una de estas dos opciones directas:
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <a
+                        href="https://colab.research.google.com/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={handleDownloadColabNotebook}
+                        className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                      >
+                        <span>🚀 Abrir en Google Colab (GPU Gratis 1-Clic)</span>
+                      </a>
+
+                      <button
+                        type="button"
+                        onClick={handleSwitchToElevenLabs}
+                        className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                      >
+                        <span>🔑 Usar mi API Key de ElevenLabs</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Notebook & External Tools Helper */}
                 <div className="pt-2 border-t border-neutral-800 flex items-center gap-2">
                   <button
+                    type="button"
                     onClick={handleDownloadColabNotebook}
                     className="flex-1 py-2 px-2.5 rounded-lg bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white font-medium text-[11px] flex items-center justify-center gap-1.5 transition-colors"
-                    title="Descargar cuaderno Google Colab con código corregido sin conflictos de numpy"
+                    title="Descargar cuaderno Google Colab configurado con tu muestra y texto"
                   >
                     <Download className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Cuaderno Colab Reparado</span>
+                    <span>Descargar Cuaderno (.ipynb)</span>
                   </button>
 
                   <button
+                    type="button"
                     onClick={handleCopyScript}
                     className="py-2 px-2.5 rounded-lg bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-400 hover:text-white text-[11px] flex items-center justify-center gap-1 transition-colors"
                     title="Copiar texto del guion"
@@ -932,6 +803,7 @@ ${scriptText}
                     API Key de ElevenLabs:
                   </label>
                   <input
+                    ref={elevenLabsApiKeyRef}
                     type="password"
                     value={settings.apiKey}
                     onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
@@ -1074,39 +946,49 @@ ${scriptText}
             </div>
           )}
 
-          {/* Synthesize Button */}
-          <button
-            onClick={handleSynthesize}
-            disabled={isSynthesizing || !scriptText.trim()}
-            className={`w-full py-3.5 px-4 rounded-lg text-white font-semibold text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shadow-md ${
-              engine === 'f5tts'
-                ? 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700'
-                : 'bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700'
-            }`}
-          >
-            {isSynthesizing ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>
-                  {fallbackStatus ||
-                    (engine === 'f5tts'
-                      ? 'Clonando Audio en Español...'
-                      : 'Generando Audio del Episodio...')}
-                </span>
-              </>
-            ) : (
-              <>
-                <Mic className="w-4 h-4" />
-                <span>
-                  {engine === 'f5tts'
-                    ? 'Generar Podcast con Mi Voz (Opción C)'
-                    : engine === 'elevenlabs'
-                    ? 'Generar Episodio con Mi Voz (ElevenLabs)'
-                    : 'Generar Preescucha Inmediata (Gemini)'}
-                </span>
-              </>
-            )}
-          </button>
+          {/* Gemini TTS High Quality Long-Script Status Banner */}
+          {isSynthesizing && engine === 'gemini' && (
+            <div className="p-3 rounded-lg bg-indigo-950/50 border border-indigo-700/70 text-xs text-indigo-200 flex items-center gap-2.5">
+              <RefreshCw className="w-4 h-4 animate-spin text-indigo-400 shrink-0" />
+              <span>Sintetizando audio en alta calidad, esto puede demorar unos segundos...</span>
+            </div>
+          )}
+
+          {/* Synthesize Button (hidden when Opción C has no GPU configured so user uses the 2 direct actions above) */}
+          {!(engine === 'f5tts' && !hasConfiguredGpu) && (
+            <button
+              onClick={handleSynthesize}
+              disabled={isSynthesizing || !scriptText.trim()}
+              className={`w-full py-3.5 px-4 rounded-lg text-white font-semibold text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shadow-md ${
+                engine === 'f5tts'
+                  ? 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700'
+                  : 'bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700'
+              }`}
+            >
+              {isSynthesizing ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>
+                    {fallbackStatus ||
+                      (engine === 'f5tts'
+                        ? 'Clonando Audio en Español...'
+                        : 'Sintetizando audio en alta calidad, esto puede demorar unos segundos...')}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Mic className="w-4 h-4" />
+                  <span>
+                    {engine === 'f5tts'
+                      ? 'Generar Podcast con Mi Voz (Opción C)'
+                      : engine === 'elevenlabs'
+                      ? 'Generar Episodio con Mi Voz (ElevenLabs)'
+                      : 'Generar Preescucha Inmediata (Gemini)'}
+                  </span>
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Right Column: Audio Player & Export & History (7 cols) */}

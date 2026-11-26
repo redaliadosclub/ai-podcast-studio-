@@ -58,6 +58,8 @@ export default function App() {
   // Commercial state & license session
   const [plans, setPlans] = useState<PlanDefinition[]>(FALLBACK_PLANS);
   const [supportWhatsapp, setSupportWhatsapp] = useState<string>('');
+  const [hasServerGpu, setHasServerGpu] = useState<boolean>(false);
+  const [preferredEngine, setPreferredEngine] = useState<'elevenlabs' | 'gemini' | 'f5tts'>('f5tts');
   const [activeLicense, setActiveLicense] = useState<ActiveLicenseSession | null>(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
 
@@ -70,6 +72,7 @@ export default function App() {
       .then((data) => {
         if (data?.plans) setPlans(data.plans);
         if (data?.supportWhatsapp) setSupportWhatsapp(data.supportWhatsapp);
+        if (typeof data?.hasExternalGpu === 'boolean') setHasServerGpu(data.hasExternalGpu);
       })
       .catch(() => {});
   }, []);
@@ -393,8 +396,15 @@ Quédate conmigo, porque hoy vamos a desgranar paso a paso cómo lograrlo sin co
               samples={samples}
               currentScriptText={currentScriptText}
               onSendToProduction={handleSendToProduction}
+              onUseElevenLabs={(text) => {
+                setCurrentScriptText(text);
+                setPreferredEngine('elevenlabs');
+                setUnlockedStepMax(5);
+                setActiveTab('production');
+              }}
               onGoToTeleprompter={() => setActiveTab('teleprompter')}
               onGoToEditor={handleConfirmStep3}
+              hasServerGpu={hasServerGpu}
             />
           )}
 
@@ -412,6 +422,9 @@ Quédate conmigo, porque hoy vamos a desgranar paso a paso cómo lograrlo sin co
               scriptTitle={scriptTitle}
               samples={samples}
               onGoToEditor={() => setActiveTab('editor')}
+              initialEngine={preferredEngine}
+              hasServerGpu={hasServerGpu}
+              whiteLabel={isWhiteLabel}
             />
           )}
         </div>

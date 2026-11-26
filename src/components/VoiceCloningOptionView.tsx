@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { RecordedSample } from '../types';
 import { TELEPROMPTER_SCRIPTS } from '../data/teleprompterScripts';
 import { fetchWithFallbackNotice } from '../utils/fetchWithTimeout';
+import { downloadColabNotebook } from '../utils/exportHelpers';
 import {
   Mic,
   Square,
@@ -31,16 +32,20 @@ interface VoiceCloningOptionViewProps {
   samples: RecordedSample[];
   currentScriptText: string;
   onSendToProduction: (text: string, title: string) => void;
+  onUseElevenLabs?: (text: string) => void;
   onGoToTeleprompter: () => void;
   onGoToEditor: () => void;
+  hasServerGpu?: boolean;
 }
 
 export const VoiceCloningOptionView: React.FC<VoiceCloningOptionViewProps> = ({
   samples,
   currentScriptText,
   onSendToProduction,
+  onUseElevenLabs,
   onGoToTeleprompter,
   onGoToEditor,
+  hasServerGpu = false,
 }) => {
   // Voice Reference Source: 'recorded' | 'in_app_mic' | 'upload'
   const [sourceType, setSourceType] = useState<'recorded' | 'in_app_mic' | 'upload'>(
@@ -241,11 +246,33 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
     return null;
   };
 
+  const hasConfiguredGpu =
+    Boolean(hasServerGpu) ||
+    (cloneMode === 'custom_endpoint' && customEndpointUrl.trim().length > 0);
+
+  const handleOpenColabWithConfig = async () => {
+    const refAudioBase64 = await getActiveRefBase64();
+    downloadColabNotebook({
+      refText,
+      scriptText: targetText,
+      scriptTitle: 'clonacion_zero_shot',
+      refAudioBase64,
+    });
+    setSuccessMessage('Cuaderno Colab (.ipynb) descargado con tu muestra y texto.');
+  };
+
   // Trigger voice cloning synthesis
   const handleTriggerCloning = async () => {
     setErrorMessage(null);
     setSuccessMessage(null);
     setFallbackStatus(null);
+
+    if (!hasConfiguredGpu) {
+      setErrorMessage(
+        'No hay una GPU externa configurada en el servidor. Usa "Abrir en Google Colab (GPU Gratis 1-Clic)" o "Usar mi API Key de ElevenLabs".'
+      );
+      return;
+    }
 
     if (sourceType === 'upload' && !uploadedBlobUrl) {
       setErrorMessage('Por favor selecciona y sube primero un archivo de audio (WAV o MP3) de tu voz.');
@@ -284,9 +311,9 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
           body: JSON.stringify(payload),
         },
         {
-          timeoutMs: 60000,
+          timeoutMs: 45000,
           fallbackDelayMs: 8500,
-          onFallbackDelay: () => setFallbackStatus('Redirigiendo al motor de respaldo...'),
+          onFallbackDelay: () => setFallbackStatus('Sintetizando audio en GPU externa...'),
         }
       );
 
@@ -874,24 +901,61 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
               </div>
             )}
 
-            {/* Trigger Button */}
-            <button
-              onClick={handleTriggerCloning}
-              disabled={isSynthesizing}
-              className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white font-semibold text-xs rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:cursor-not-allowed"
-            >
-              {isSynthesizing ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                  <span>{fallbackStatus || 'Procesando clonación vocal con F5-TTS...'}</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  <span>Activar Clonación Vocal y Generar Audio Ahora</span>
-                </>
-              )}
-            </button>
+            {/* Immediate Notice when no external GPU is configured */}
+            {!hasConfiguredGpu ? (
+              <div className="p-4 rounded-xl border border-amber-500/50 bg-amber-950/30 space-y-3">
+                <div className="space-y-1">
+                  <h4 className="text-xs font-bold text-amber-200">
+                    Sin GPU externa configurada en el servidor
+                  </h4>
+                  <p className="text-[11px] text-amber-100/80 leading-relaxed">
+                    Para ejecutar clonación Zero-Shot F5-TTS sin esperas ni errores de red, elige una de estas dos opciones directas:
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <a
+                    href="https://colab.research.google.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={handleOpenColabWithConfig}
+                    className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5 text-center"
+                  >
+                    <span>🚀 Abrir en Google Colab (GPU Gratis 1-Clic)</span>
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUseElevenLabs
+                        ? onUseElevenLabs(targetText)
+                        : onSendToProduction(targetText, 'Episodio ElevenLabs')
+                    }
+                    className="flex-1 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <span>🔑 Usar mi API Key de ElevenLabs</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={handleTriggerCloning}
+                disabled={isSynthesizing}
+                className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white font-semibold text-xs rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:cursor-not-allowed"
+              >
+                {isSynthesizing ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                    <span>{fallbackStatus || 'Procesando clonación vocal con F5-TTS...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    <span>Activar Clonación Vocal y Generar Audio Ahora</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>

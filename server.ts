@@ -46,9 +46,32 @@ const TEXT_MODEL_CHAIN = [
 ] as const;
 
 const TTS_MODEL_CHAIN = [
-  { model: 'gemini-3.8-flash-tts', timeoutMs: 12000 },
-  { model: 'gemini-3.8-flash-lite-tts', timeoutMs: 25000 },
+  { model: 'gemini-3.8-flash-tts', timeoutMs: 45000 },
+  { model: 'gemini-3.8-flash-lite-tts', timeoutMs: 45000 },
 ] as const;
+
+function isSafeExternalGpuUrl(rawUrl: string): boolean {
+  if (!rawUrl || !isValidHttpUrl(rawUrl)) return false;
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '::1' ||
+      host === '0.0.0.0' ||
+      host.startsWith('127.') ||
+      host.startsWith('10.') ||
+      host.startsWith('169.254.') ||
+      host.startsWith('192.168.') ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function extractStatusCode(error: any): number | undefined {
   if (typeof error?.status === 'number') return error.status;
@@ -515,7 +538,19 @@ app.post('/api/tts/preview', async (req: Request, res: Response) => {
           'Se alcanzó el límite diario gratuito de Gemini TTS (10 peticiones/día). Puedes usar el lector del navegador o tu cuenta de ElevenLabs.',
       });
     }
-    return res.status(500).json({ error: 'Error en síntesis de prueba: ' + error.message });
+    const isAbortOrDemand =
+      error?.name === 'AbortError' ||
+      error?.name === 'TimeoutError' ||
+      String(error?.message || '').toLowerCase().includes('aborted') ||
+      extractStatusCode(error) === 503;
+
+    if (isAbortOrDemand) {
+      return res.status(503).json({
+        error:
+          'La síntesis de audio superó los 45s o el motor TTS está con alta demanda. Prueba dividir el guion o reintentar en unos segundos.',
+      });
+    }
+    return res.status(500).json({ error: 'Error en síntesis de prueba: ' + (error?.message || 'Error desconocido') });
   }
 });
 
@@ -634,7 +669,7 @@ app.post('/api/elevenlabs/verify', async (req: Request, res: Response) => {
   }
 });
 
-// Endpoint: Open Source Voice Cloning Synthesis (F5-TTS / XTTS v2 / Neural)
+// Endpoint: Open Source Voice Cloning Synthesis (F5-TTS / XTTS v2 Zero-Shot)
 app.post('/api/voice-clone/synthesize', async (req: Request, res: Response) => {
   try {
     const {
@@ -651,87 +686,73 @@ app.post('/api/voice-clone/synthesize', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'El texto del guion es obligatorio.' });
     }
 
-    // Clean directing brackets for speech synthesis
     const cleanScript = text.replace(/\[[^\]]+\]/g, '').trim();
+    const serverGpuUrl = (process.env.F5_TTS_GPU_URL || '').trim();
+    const targetGpuUrl =
+      mode === 'custom_url' && endpointUrl
+        ? String(endpointUrl).trim()
+        : serverGpuUrl;
 
-    // Mode 1: Custom Endpoint (Hugging Face Space / Gradio / Replicate / Local GPU)
-    if (mode === 'custom_url' && endpointUrl) {
-      try {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (apiToken) {
-          headers['Authorization'] = `Bearer ${apiToken}`;
-        }
-
-        const externalRes = await fetch(endpointUrl, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            data: [
-              refAudioBase64 ? `data:audio/wav;base64,${refAudioBase64}` : null,
-              refText || '',
-              cleanScript,
-              voiceSpeed,
-            ],
-          }),
-        });
-
-        if (!externalRes.ok) {
-          const errText = await externalRes.text();
-          throw new Error(`El servidor externo respondió con código ${externalRes.status}: ${errText.slice(0, 200)}`);
-        }
-
-        const externalData = await externalRes.json();
-        // Gradio typically returns { data: [ audioUrlOrBase64 ] }
-        const returnedAudio = externalData.data?.[0];
-        if (returnedAudio) {
-          let base64 = returnedAudio;
-          if (returnedAudio.startsWith('data:')) {
-            base64 = returnedAudio.split(',')[1];
-          }
-          return res.json({
-            audioBase64: base64,
-            mimeType: 'audio/wav',
-            source: 'custom_f5tts_endpoint',
-          });
-        }
-      } catch (extErr: any) {
-        console.warn('Fallo en endpoint externo, pasando a motor alternativo:', extErr.message);
-        // Fall through to native synthesis if custom fails
-      }
-    }
-
-    // Mode 2: Native High-Fidelity Neural Synthesis (Default / Immediate in-app testing)
-    // Uses Google Gemini Audio with conversational podcast host prosody + automatic fallback
-    const response = await generateTtsWithFallback({
-      text: cleanScript,
-      voiceName: 'Charon',
-      style: 'Natural Spanish conversational podcast narrator with deep, warm and engaging prosody',
-    });
-
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-
-    if (!base64Audio) {
-      throw new Error('No se recibió stream de audio del motor de síntesis.');
-    }
-
-    return res.json({
-      audioBase64: base64Audio,
-      mimeType: 'audio/wav',
-      source: 'native_neural_f5tts',
-      message: 'Audio sintetizado con éxito utilizando el motor neural en español optimizado.',
-    });
-  } catch (error: any) {
-    if (isQuotaError(error)) {
-      return res.status(429).json({
-        quotaExceeded: true,
+    if (!targetGpuUrl) {
+      return res.status(400).json({
+        gpuNotConfigured: true,
         error:
-          'Has alcanzado la cuota diaria gratuita de 10 peticiones de Gemini TTS. Puedes continuar creando tus guiones y usar ElevenLabs o el reproductor del navegador.',
+          'No hay una GPU externa configurada en el servidor para clonación Zero-Shot. Usa Google Colab (GPU Gratis 1-Clic) o conecta tu API Key de ElevenLabs.',
       });
     }
 
+    if (!isSafeExternalGpuUrl(targetGpuUrl)) {
+      return res.status(400).json({
+        error: 'La URL del servidor GPU externo no es válida o apunta a una red privada no permitida.',
+      });
+    }
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiToken) {
+      headers['Authorization'] = `Bearer ${String(apiToken).trim()}`;
+    }
+
+    const externalRes = await fetch(targetGpuUrl, {
+      method: 'POST',
+      headers,
+      signal: AbortSignal.timeout(45000),
+      body: JSON.stringify({
+        data: [
+          refAudioBase64 ? `data:audio/wav;base64,${refAudioBase64}` : null,
+          refText || '',
+          cleanScript,
+          voiceSpeed,
+        ],
+      }),
+    });
+
+    if (!externalRes.ok) {
+      const errText = await externalRes.text();
+      throw new Error(
+        `El endpoint GPU respondió con código ${externalRes.status}: ${errText.slice(0, 200)}`
+      );
+    }
+
+    const externalData = await externalRes.json();
+    const returnedAudio = externalData.data?.[0];
+    if (!returnedAudio) {
+      throw new Error('El servidor GPU no devolvió un archivo de audio válido.');
+    }
+
+    let base64 = returnedAudio;
+    if (typeof returnedAudio === 'string' && returnedAudio.startsWith('data:')) {
+      base64 = returnedAudio.split(',')[1];
+    }
+
+    return res.json({
+      audioBase64: base64,
+      mimeType: 'audio/wav',
+      source: 'custom_f5tts_endpoint',
+    });
+  } catch (error: any) {
     console.error('Error en síntesis de voz clonada:', error?.message);
     return res.status(500).json({
-      error: 'Error en la clonación de voz: ' + (error?.message || 'Error desconocido'),
+      error: 'Error al conectar con la GPU externa de clonación: ' + (error?.message || 'Error desconocido'),
     });
   }
 });
@@ -746,6 +767,7 @@ app.get('/api/commercial/public', async (_req: Request, res: Response) => {
     return res.json({
       plans: Object.values(PLANS_CATALOG),
       supportWhatsapp: config.supportWhatsapp,
+      hasExternalGpu: isSafeExternalGpuUrl((process.env.F5_TTS_GPU_URL || '').trim()),
       configuredLinks: {
         creator: {
           mp: isValidHttpUrl(config.paymentLinks.creator.mpUrl),
