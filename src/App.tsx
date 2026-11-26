@@ -198,7 +198,14 @@ Quédate conmigo, porque hoy vamos a desgranar paso a paso cómo lograrlo sin co
   };
 
   const handleDeleteSample = (id: string) => {
-    setSamples((prev) => prev.filter((s) => s.id !== id));
+    setSamples((prev) => {
+      const target = prev.find((s) => s.id === id);
+      if (target?.blobUrl) {
+        const urlToRevoke = target.blobUrl;
+        window.setTimeout(() => URL.revokeObjectURL(urlToRevoke), 15000);
+      }
+      return prev.filter((s) => s.id !== id);
+    });
   };
 
   const handleProceedToStep2 = () => {

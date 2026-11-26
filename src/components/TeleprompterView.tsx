@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { TELEPROMPTER_SCRIPTS } from '../data/teleprompterScripts';
 import { TeleprompterScriptItem, RecordedSample, AudioQualityMetrics } from '../types';
 import { audioBufferToWav, analyzeAudioBuffer, formatDuration } from '../utils/audioUtils';
+import { triggerBlobDownload, sanitizeFilename } from '../utils/exportHelpers';
 import { Mic, Square, Play, RotateCcw, Download, CheckCircle, AlertTriangle, Sparkles, Volume2, Info, Upload, ArrowRight } from 'lucide-react';
 
 interface TeleprompterViewProps {
@@ -41,11 +42,14 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
   const timerIntervalRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Cleanup on unmount
+  // Cleanup on unmount (delay Blob URL revocation by 15s to avoid breaking active downloads)
   useEffect(() => {
     return () => {
       stopRecordingCleanup();
-      if (lastTakeUrl) URL.revokeObjectURL(lastTakeUrl);
+      if (lastTakeUrl) {
+        const urlToRevoke = lastTakeUrl;
+        window.setTimeout(() => URL.revokeObjectURL(urlToRevoke), 15000);
+      }
     };
   }, [lastTakeUrl]);
 
@@ -68,7 +72,10 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
       setIsSavedSuccessfully(false);
       setLastTakeBuffer(null);
       setLastTakeBlob(null);
-      if (lastTakeUrl) URL.revokeObjectURL(lastTakeUrl);
+      if (lastTakeUrl) {
+        const urlToRevoke = lastTakeUrl;
+        window.setTimeout(() => URL.revokeObjectURL(urlToRevoke), 15000);
+      }
       setLastTakeUrl(null);
       setLastTakeMetrics(null);
       recordedChunksRef.current = [];
@@ -175,7 +182,10 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
       setIsSavedSuccessfully(false);
       setLastTakeBuffer(null);
       setLastTakeBlob(null);
-      if (lastTakeUrl) URL.revokeObjectURL(lastTakeUrl);
+      if (lastTakeUrl) {
+        const urlToRevoke = lastTakeUrl;
+        window.setTimeout(() => URL.revokeObjectURL(urlToRevoke), 15000);
+      }
       setLastTakeUrl(null);
       setLastTakeMetrics(null);
 
@@ -260,7 +270,10 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
   };
 
   const handleSaveTake = () => {
-    if (!lastTakeBlob || !lastTakeMetrics || !lastTakeUrl) return;
+    if (!lastTakeBlob || !lastTakeMetrics) return;
+
+    // Create an independent Blob URL for the saved sample so TeleprompterView cleanup never revokes it
+    const savedSampleBlobUrl = URL.createObjectURL(lastTakeBlob);
 
     const newSample: RecordedSample = {
       id: `sample-${Date.now()}`,
@@ -269,7 +282,7 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
       register: selectedScript.register,
       durationSec: Math.round(recordingSeconds * 10) / 10,
       timestamp: Date.now(),
-      blobUrl: lastTakeUrl,
+      blobUrl: savedSampleBlobUrl,
       audioBlob: lastTakeBlob,
       qualityMetrics: lastTakeMetrics,
     };
@@ -657,14 +670,20 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
                     : 'Guardar Muestra para ElevenLabs'}
                 </button>
 
-                <a
-                  href={lastTakeUrl}
-                  download={`elevenlabs_${selectedScript.register}_take.wav`}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!lastTakeBlob) return;
+                    void triggerBlobDownload(
+                      lastTakeBlob,
+                      `muestra_voz_${sanitizeFilename(selectedScript.register, 'toma')}.wav`
+                    );
+                  }}
                   className="p-2.5 rounded-lg border border-neutral-700 text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
                   title="Descargar archivo WAV"
                 >
                   <Download className="w-4 h-4" />
-                </a>
+                </button>
               </div>
             </div>
           )}

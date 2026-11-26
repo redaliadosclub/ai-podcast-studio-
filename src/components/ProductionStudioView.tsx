@@ -4,6 +4,7 @@ import { TELEPROMPTER_SCRIPTS } from '../data/teleprompterScripts';
 import { fetchWithFallbackNotice } from '../utils/fetchWithTimeout';
 import {
   downloadColabNotebook,
+  downloadFromBlobOrUrl,
   downloadScriptPdf,
   downloadScriptTxt,
   sanitizeFilename,
@@ -80,6 +81,8 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [fallbackStatus, setFallbackStatus] = useState<string | null>(null);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
+  const [currentAudioBlob, setCurrentAudioBlob] = useState<Blob | null>(null);
+  const [currentAudioExt, setCurrentAudioExt] = useState<'wav' | 'mp3'>('wav');
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [audioDuration, setAudioDuration] = useState<number>(0);
   const [verifyStatus, setVerifyStatus] = useState<string | null>(null);
@@ -104,7 +107,8 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
   }, [settings]);
 
   useEffect(() => {
-    localStorage.setItem('voicelab_generated_episodes', JSON.stringify(episodes));
+    const serializable = episodes.map(({ audioBlob: _ignored, ...rest }) => rest);
+    localStorage.setItem('voicelab_generated_episodes', JSON.stringify(serializable));
   }, [episodes]);
 
   // Sync ref text when selected sample changes
@@ -263,9 +267,12 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
           throw new Error(data.error || 'Error al sintetizar con ElevenLabs.');
         }
 
-        const audioBlob = b64toBlob(data.audioBase64, data.mimeType || 'audio/mpeg');
+        const mimeType = data.mimeType || 'audio/mpeg';
+        const audioBlob = b64toBlob(data.audioBase64, mimeType);
         const audioUrl = URL.createObjectURL(audioBlob);
         setCurrentAudioUrl(audioUrl);
+        setCurrentAudioBlob(audioBlob);
+        setCurrentAudioExt(mimeType.includes('mpeg') ? 'mp3' : 'wav');
 
         const newEpisode: GeneratedEpisodeAudio = {
           id: `ep-${Date.now()}`,
@@ -278,6 +285,8 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
           }),
           durationSec: Math.round(scriptText.split(/\s+/).length / 2.2),
           audioUrl,
+          audioBlob,
+          mimeType,
           engineUsed: 'ElevenLabs',
           modelOrVoice: settings.voiceName || settings.voiceId,
           settingsSnapshot: {
@@ -327,9 +336,12 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
           throw new Error(data.error || 'Error en la síntesis de voz.');
         }
 
-        const audioBlob = b64toBlob(data.audioBase64, data.mimeType || 'audio/wav');
+        const mimeType = data.mimeType || 'audio/wav';
+        const audioBlob = b64toBlob(data.audioBase64, mimeType);
         const audioUrl = URL.createObjectURL(audioBlob);
         setCurrentAudioUrl(audioUrl);
+        setCurrentAudioBlob(audioBlob);
+        setCurrentAudioExt('wav');
 
         const newEpisode: GeneratedEpisodeAudio = {
           id: `ep-${Date.now()}`,
@@ -342,6 +354,8 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
           }),
           durationSec: Math.round(scriptText.split(/\s+/).length / 2.2),
           audioUrl,
+          audioBlob,
+          mimeType,
           engineUsed: 'F5-TTS / XTTS',
           modelOrVoice: 'Endpoint GPU F5-TTS',
         };
@@ -377,6 +391,8 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
         const audioBlob = b64toBlob(data.audioBase64, 'audio/wav');
         const audioUrl = URL.createObjectURL(audioBlob);
         setCurrentAudioUrl(audioUrl);
+        setCurrentAudioBlob(audioBlob);
+        setCurrentAudioExt('wav');
 
         const newEpisode: GeneratedEpisodeAudio = {
           id: `ep-${Date.now()}`,
@@ -389,6 +405,8 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
           }),
           durationSec: Math.round(scriptText.split(/\s+/).length / 2.2),
           audioUrl,
+          audioBlob,
+          mimeType: 'audio/wav',
           engineUsed: 'Gemini TTS',
           modelOrVoice: geminiVoice,
         };
@@ -411,7 +429,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
 
   const handleDownloadColabNotebook = async () => {
     const refAudioBase64 = await getActiveSampleBase64();
-    downloadColabNotebook({
+    await downloadColabNotebook({
       refText: f5RefText,
       scriptText,
       scriptTitle,
@@ -421,12 +439,12 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
     window.setTimeout(() => setSuccessNotice(null), 3500);
   };
 
-  const handleDownloadTxt = () => {
+  const handleDownloadTxt = async () => {
     if (!scriptText.trim()) {
       setErrorMessage('No hay texto en el guion para exportar.');
       return;
     }
-    downloadScriptTxt({
+    await downloadScriptTxt({
       scriptText,
       scriptTitle,
       brandName: whiteLabel ? 'Estudio Vocal' : 'VoiceLab Coach',
@@ -435,14 +453,14 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
     window.setTimeout(() => setSuccessNotice(null), 2500);
   };
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = async () => {
     if (!scriptText.trim()) {
       setErrorMessage('No hay texto en el guion para exportar.');
       return;
     }
 
     try {
-      downloadScriptPdf({
+      await downloadScriptPdf({
         scriptText,
         scriptTitle,
         brandName: whiteLabel ? 'Estudio Vocal' : 'VoiceLab Coach',
@@ -455,7 +473,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
     }
   };
 
-  const handleDownloadMd = () => {
+  const handleDownloadMd = async () => {
     if (!scriptText.trim()) {
       setErrorMessage('No hay texto en el guion para exportar.');
       return;
@@ -466,7 +484,23 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
       ],
       { type: 'text/markdown;charset=utf-8' }
     );
-    triggerBlobDownload(blob, `${sanitizeFilename(scriptTitle || 'episodio')}_guion.md`);
+    await triggerBlobDownload(
+      blob,
+      `${sanitizeFilename(scriptTitle || 'episodio', 'episodio')}_guion.md`
+    );
+  };
+
+  const handleDownloadAudio = async (params: {
+    blob?: Blob | null;
+    url?: string | null;
+    filename: string;
+  }) => {
+    setErrorMessage(null);
+    try {
+      await downloadFromBlobOrUrl(params);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'No se pudo descargar el audio. Genera el episodio nuevamente.');
+    }
   };
 
   const activeSample = samples.find((s) => s.id === selectedSampleId);
@@ -1039,14 +1073,20 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
                       ))}
                     </div>
 
-                    <a
-                      href={currentAudioUrl}
-                      download={`${(scriptTitle || 'episodio').toLowerCase().replace(/\s+/g, '_')}_master.wav`}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleDownloadAudio({
+                          blob: currentAudioBlob,
+                          url: currentAudioUrl,
+                          filename: `${sanitizeFilename(scriptTitle || 'episodio', 'episodio')}_master.${currentAudioExt}`,
+                        })
+                      }
                       className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors"
                     >
                       <Download className="w-3.5 h-3.5" />
                       <span>Descargar Audio Master</span>
-                    </a>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1148,20 +1188,33 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
 
                     <div className="flex items-center gap-2 shrink-0">
                       <button
-                        onClick={() => setCurrentAudioUrl(ep.audioUrl)}
+                        type="button"
+                        onClick={() => {
+                          setCurrentAudioUrl(ep.audioUrl);
+                          setCurrentAudioBlob(ep.audioBlob || null);
+                          setCurrentAudioExt(ep.mimeType?.includes('mpeg') ? 'mp3' : 'wav');
+                        }}
                         className="p-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-colors"
                         title="Cargar en reproductor"
                       >
                         <Play className="w-3.5 h-3.5" />
                       </button>
-                      <a
-                        href={ep.audioUrl}
-                        download={`${ep.scriptTitle.toLowerCase().replace(/\s+/g, '_')}.wav`}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void handleDownloadAudio({
+                            blob: ep.audioBlob,
+                            url: ep.audioUrl,
+                            filename: `${sanitizeFilename(ep.scriptTitle || 'episodio', 'episodio')}.${
+                              ep.mimeType?.includes('mpeg') ? 'mp3' : 'wav'
+                            }`,
+                          })
+                        }
                         className="p-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition-colors"
                         title="Descargar"
                       >
                         <Download className="w-3.5 h-3.5" />
-                      </a>
+                      </button>
                     </div>
                   </div>
                 ))}

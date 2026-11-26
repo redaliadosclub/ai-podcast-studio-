@@ -1,5 +1,6 @@
 import React from 'react';
 import { RecordedSample } from '../types';
+import { downloadFromBlobOrUrl, sanitizeFilename } from '../utils/exportHelpers';
 import { Download, Trash2, CheckCircle2, Play, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 
 interface SamplesManagerViewProps {
@@ -184,14 +185,20 @@ export const SamplesManagerView: React.FC<SamplesManagerViewProps> = ({
                     </span>
                   </div>
 
-                  <a
-                    href={sample.blobUrl}
-                    download={`elevenlabs_${sample.register}_sample.wav`}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void downloadFromBlobOrUrl({
+                        blob: sample.audioBlob,
+                        url: sample.blobUrl,
+                        filename: `muestra_voz_${idx + 1}_${sanitizeFilename(sample.register, 'toma')}.wav`,
+                      })
+                    }
                     className="flex items-center gap-1.5 text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Descargar WAV</span>
-                  </a>
+                  </button>
                 </div>
               </div>
             ))}

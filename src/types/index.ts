@@ -91,6 +91,8 @@ export interface GeneratedEpisodeAudio {
   date: string;
   durationSec: number;
   audioUrl: string;
+  audioBlob?: Blob;
+  mimeType?: string;
   engineUsed: 'ElevenLabs' | 'Gemini TTS' | 'F5-TTS / XTTS';
   modelOrVoice: string;
   settingsSnapshot?: {

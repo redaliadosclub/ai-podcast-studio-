@@ -1,5 +1,8 @@
 import { jsPDF } from 'jspdf';
 
+const DATA_URL_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+const BLOB_REVOKE_DELAY_MS = 20_000; // >= 15s safe margin before revoking Blob URLs
+
 /**
  * Normalizes typography and strips emojis / non-Latin-1 glyphs
  * that break or stall jsPDF's built-in Helvetica font metrics.
@@ -20,33 +23,137 @@ export function sanitizeForPdf(input: string): string {
     .replace(/[^\t\n\x20-\x7E\xA1-\xFF]/g, '');
 }
 
-export function sanitizeFilename(raw: string, fallback = 'guion_podcast'): string {
+/**
+ * Cleans a filename segment leaving ONLY ASCII letters, numbers, and underscores.
+ */
+export function sanitizeFilename(raw: string, fallback = 'archivo'): string {
   const base = (raw || fallback)
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '_')
+    .replace(/[^a-z0-9_]+/g, '_')
     .replace(/^_+|_+$/g, '');
   return base || fallback;
 }
 
-export function triggerBlobDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
+/**
+ * Splits base name and extension, keeping only letters, numbers, and underscores
+ * in the base name (e.g. "muestra_voz_1.wav").
+ */
+export function buildCleanDownloadFilename(filename: string, defaultExt = 'bin'): string {
+  const trimmed = (filename || '').trim();
+  const lastDot = trimmed.lastIndexOf('.');
+  let rawBase = trimmed;
+  let rawExt = defaultExt;
+
+  if (lastDot > 0 && lastDot < trimmed.length - 1) {
+    rawBase = trimmed.slice(0, lastDot);
+    rawExt = trimmed.slice(lastDot + 1);
+  }
+
+  const cleanBase = sanitizeFilename(rawBase, 'archivo');
+  const cleanExt =
+    rawExt
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '') || defaultExt;
+
+  return `${cleanBase}.${cleanExt}`;
+}
+
+export function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string' && reader.result.startsWith('data:')) {
+        resolve(reader.result);
+      } else {
+        reject(new Error('No se pudo convertir el archivo a Data URL.'));
+      }
+    };
+    reader.onerror = () => reject(reader.error || new Error('Error leyendo archivo para descarga.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function executeAnchorDownload(href: string, cleanFilename: string): void {
   const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
+  a.href = href;
+  a.download = cleanFilename;
+  a.rel = 'noopener';
   a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  window.setTimeout(() => {
+    if (a.parentNode) {
+      a.parentNode.removeChild(a);
+    }
+  }, 250);
 }
 
-export function downloadScriptTxt(params: {
+/**
+ * Reliable browser/iframe file download:
+ * - Sanitizes filename to [a-z0-9_] + extension
+ * - Converts files < 10 MB to Data URL via FileReader.readAsDataURL
+ * - Falls back to Blob URL attached to document.body with >= 15s delayed revocation
+ */
+export async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> {
+  const cleanFilename = buildCleanDownloadFilename(filename);
+
+  if (blob.size < DATA_URL_MAX_BYTES) {
+    try {
+      const dataUrl = await blobToDataUrl(blob);
+      executeAnchorDownload(dataUrl, cleanFilename);
+      return;
+    } catch (err) {
+      console.warn('Data URL fallback to delayed Blob URL:', err);
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+  executeAnchorDownload(url, cleanFilename);
+  window.setTimeout(() => URL.revokeObjectURL(url), BLOB_REVOKE_DELAY_MS);
+}
+
+/**
+ * Downloads audio or generated assets from either an in-memory Blob or a URL,
+ * routing through triggerBlobDownload so Data URL (<10MB) and delayed revocation apply.
+ */
+export async function downloadFromBlobOrUrl(params: {
+  blob?: Blob | null;
+  url?: string | null;
+  filename: string;
+}): Promise<void> {
+  const cleanFilename = buildCleanDownloadFilename(params.filename, 'wav');
+
+  if (params.blob) {
+    await triggerBlobDownload(params.blob, cleanFilename);
+    return;
+  }
+
+  if (!params.url) {
+    throw new Error('No hay archivo disponible para descargar.');
+  }
+
+  if (params.url.startsWith('data:')) {
+    executeAnchorDownload(params.url, cleanFilename);
+    return;
+  }
+
+  const response = await fetch(params.url);
+  if (!response.ok) {
+    throw new Error('No se pudo leer el archivo de audio en memoria.');
+  }
+  const fetchedBlob = await response.blob();
+  await triggerBlobDownload(fetchedBlob, cleanFilename);
+}
+
+export async function downloadScriptTxt(params: {
   scriptText: string;
   scriptTitle: string;
   brandName?: string;
-}): void {
+}): Promise<void> {
   const cleanTitle = (params.scriptTitle || 'Guion de Podcast').trim();
   const brand = (params.brandName || 'VOICELAB COACH').toUpperCase();
   const divider = '==================================================';
@@ -68,14 +175,14 @@ ${params.scriptText.replace(/\r\n?/g, '\n')}
 `;
 
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-  triggerBlobDownload(blob, `${sanitizeFilename(cleanTitle)}_guion.txt`);
+  await triggerBlobDownload(blob, `${sanitizeFilename(cleanTitle, 'guion_podcast')}_guion.txt`);
 }
 
-export function downloadScriptPdf(params: {
+export async function downloadScriptPdf(params: {
   scriptText: string;
   scriptTitle: string;
   brandName?: string;
-}): void {
+}): Promise<void> {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -179,19 +286,23 @@ export function downloadScriptPdf(params: {
     );
   }
 
-  doc.save(`${sanitizeFilename(cleanTitle)}_guion.pdf`);
+  const pdfBlob = doc.output('blob');
+  await triggerBlobDownload(
+    pdfBlob,
+    `${sanitizeFilename(cleanTitle, 'guion_podcast')}_guion.pdf`
+  );
 }
 
 function escapePythonTripleQuote(str: string): string {
   return (str || '').replace(/\\/g, '\\\\').replace(/"""/g, '\\"\\"\\"');
 }
 
-export function downloadColabNotebook(params: {
+export async function downloadColabNotebook(params: {
   refText: string;
   scriptText: string;
   scriptTitle?: string;
   refAudioBase64?: string | null;
-}): void {
+}): Promise<void> {
   const hasEmbeddedSample =
     Boolean(params.refAudioBase64) && (params.refAudioBase64?.length || 0) <= 3_200_000;
 
@@ -278,8 +389,8 @@ export function downloadColabNotebook(params: {
   const blob = new Blob([JSON.stringify(notebook, null, 2)], {
     type: 'application/json;charset=utf-8',
   });
-  triggerBlobDownload(
+  await triggerBlobDownload(
     blob,
-    `clonador_f5tts_${sanitizeFilename(params.scriptTitle || 'podcast')}.ipynb`
+    `clonador_f5tts_${sanitizeFilename(params.scriptTitle || 'podcast', 'podcast')}.ipynb`
   );
 }

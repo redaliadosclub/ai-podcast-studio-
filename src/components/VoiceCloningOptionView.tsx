@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { RecordedSample } from '../types';
 import { TELEPROMPTER_SCRIPTS } from '../data/teleprompterScripts';
 import { fetchWithFallbackNotice } from '../utils/fetchWithTimeout';
-import { downloadColabNotebook } from '../utils/exportHelpers';
+import { downloadColabNotebook, downloadFromBlobOrUrl } from '../utils/exportHelpers';
 import {
   Mic,
   Square,
@@ -252,7 +252,7 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
 
   const handleOpenColabWithConfig = async () => {
     const refAudioBase64 = await getActiveRefBase64();
-    downloadColabNotebook({
+    await downloadColabNotebook({
       refText,
       scriptText: targetText,
       scriptTitle: 'clonacion_zero_shot',
@@ -356,7 +356,10 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
         const byteArray = new Uint8Array(byteNumbers);
         const blob = new Blob([byteArray], { type: data.mimeType || 'audio/wav' });
 
-        if (clonedAudioUrl) URL.revokeObjectURL(clonedAudioUrl);
+        if (clonedAudioUrl) {
+          const prevUrl = clonedAudioUrl;
+          window.setTimeout(() => URL.revokeObjectURL(prevUrl), 15000);
+        }
         const newUrl = URL.createObjectURL(blob);
         setClonedAudioUrl(newUrl);
         setClonedAudioBlob(blob);
@@ -417,13 +420,12 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
   };
 
   const handleDownloadClonedAudio = () => {
-    if (!clonedAudioUrl) return;
-    const a = document.createElement('a');
-    a.href = clonedAudioUrl;
-    a.download = `voicelab_f5_cloned_${Date.now()}.wav`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    if (!clonedAudioUrl && !clonedAudioBlob) return;
+    void downloadFromBlobOrUrl({
+      blob: clonedAudioBlob,
+      url: clonedAudioUrl,
+      filename: `voicelab_f5_cloned_${Date.now()}.wav`,
+    });
   };
 
   const handleSendScriptToProduction = () => {
