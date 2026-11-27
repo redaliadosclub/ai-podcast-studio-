@@ -451,21 +451,25 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
 import TTS
 print("✅ Coqui TTS instalado:", TTS.__version__)
 
-# Celda 2: Síntesis en Español Nativo (language="es")
+# Celda 2: Síntesis oración por oración en Español Nativo (language="es")
 import os
 os.environ["COQUI_TOS_AGREED"] = "1"
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
+import numpy
+import soundfile
 from TTS.api import TTS
+
 tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
-tts.tts_to_file(
-    text="Tu guion aquí...",
-    speaker_wav="muestra_voz.wav",
-    language="es",
-    file_path="episodio_clonado.wav",
-    split_sentences=True,
-    temperature=0.65,
-    repetition_penalty=5.0
-)`;
+silencio = numpy.zeros(int(24000 * 0.25), dtype=numpy.float32)
+oraciones = [o.strip() + "." for o in texto_limpio.split(".") if o.strip()]
+fragmentos = []
+for i, oracion in enumerate(oraciones):
+    wav = tts.tts(text=oracion, speaker_wav="muestra_limpia.wav", language="es", temperature=0.65, repetition_penalty=5.0)
+    fragmentos.append(numpy.asarray(wav, dtype=numpy.float32))
+    if i < len(oraciones) - 1:
+        fragmentos.append(silencio)
+audio_final = numpy.concatenate(fragmentos)
+soundfile.write("episodio_clonado.wav", audio_final, 24000)`;
     navigator.clipboard.writeText(text);
     setCopiedSnippet(true);
     setTimeout(() => setCopiedSnippet(false), 2500);
@@ -551,13 +555,18 @@ tts.tts_to_file(
 import TTS
 print("✅ Coqui TTS instalado:", TTS.__version__)
 
-# Celda 2: Síntesis en Español Nativo
+# Celda 2: Síntesis oración por oración en Español Nativo
 import os
 os.environ["COQUI_TOS_AGREED"] = "1"
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
+import numpy, soundfile
 from TTS.api import TTS
 tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
-tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es", file_path="episodio_clonado.wav", split_sentences=True, temperature=0.65, repetition_penalty=5.0)`}
+silencio = numpy.zeros(int(24000 * 0.25), dtype=numpy.float32)
+oraciones = [o.strip() + "." for o in texto_limpio.split(".") if o.strip()]
+fragmentos = [numpy.asarray(tts.tts(text=o, speaker_wav="muestra_limpia.wav", language="es", temperature=0.65, repetition_penalty=5.0), dtype=numpy.float32) for o in oraciones]
+audio_final = numpy.concatenate([x for idx, f in enumerate(fragmentos) for x in ([f, silencio] if idx < len(fragmentos) - 1 else [f])])
+soundfile.write("episodio_clonado.wav", audio_final, 24000)`}
             </pre>
           </div>
           <p className="text-xs text-neutral-400">
