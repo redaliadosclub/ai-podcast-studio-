@@ -445,21 +445,26 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
   };
 
   const copyColabFix = () => {
-    const text = `# Celda 1: Instalación limpia de Coqui XTTS v2 en Google Colab
-!pip install -q coqui-tts soundfile
+    const text = `# Celda 1: Instalación compatible con Python 3.13 en Google Colab
+!pip install -q --upgrade pip
+!pip install -q "coqui-tts>=0.26.0" soundfile || pip install -q git+https://github.com/idiap/coqui-ai-TTS.git soundfile
+import TTS
+print("✅ Coqui TTS instalado:", TTS.__version__)
 
 # Celda 2: Síntesis en Español Nativo (language="es")
 import os
-from TTS.api import TTS
 os.environ["COQUI_TOS_AGREED"] = "1"
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
+from TTS.api import TTS
 tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
 tts.tts_to_file(
     text="Tu guion aquí...",
     speaker_wav="muestra_voz.wav",
     language="es",
     file_path="episodio_clonado.wav",
-    split_sentences=True
+    split_sentences=True,
+    temperature=0.65,
+    repetition_penalty=5.0
 )`;
     navigator.clipboard.writeText(text);
     setCopiedSnippet(true);
@@ -540,16 +545,19 @@ tts.tts_to_file(
               </button>
             </div>
             <pre className="text-neutral-300 whitespace-pre-wrap text-[11px] leading-relaxed">
-{`# Celda 1: Instalación limpia
-!pip install -q coqui-tts soundfile
+{`# Celda 1: Instalación compatible con Python 3.13
+!pip install -q --upgrade pip
+!pip install -q "coqui-tts>=0.26.0" soundfile || pip install -q git+https://github.com/idiap/coqui-ai-TTS.git soundfile
+import TTS
+print("✅ Coqui TTS instalado:", TTS.__version__)
 
 # Celda 2: Síntesis en Español Nativo
 import os
-from TTS.api import TTS
 os.environ["COQUI_TOS_AGREED"] = "1"
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
+from TTS.api import TTS
 tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
-tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es", file_path="episodio_clonado.wav", split_sentences=True)`}
+tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es", file_path="episodio_clonado.wav", split_sentences=True, temperature=0.65, repetition_penalty=5.0)`}
             </pre>
           </div>
           <p className="text-xs text-neutral-400">
