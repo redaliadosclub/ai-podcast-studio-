@@ -94,7 +94,7 @@ export const SamplesManagerView: React.FC<SamplesManagerViewProps> = ({
                 onClick={onGoToCloning}
                 className="text-xs font-semibold text-indigo-300 hover:text-white bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-700/60 px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
               >
-                <span>⚡ Clonar con F5-TTS In-App</span>
+                <span>⚡ Clonar con Coqui XTTS v2</span>
               </button>
             )}
             <button

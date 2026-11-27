@@ -99,7 +99,7 @@ export const Header: React.FC<HeaderProps> = ({
             {!hasActiveLicense && <Lock className="w-3 h-3 text-amber-400/80" />}
           </button>
 
-          {/* F5-TTS Cloning: Requires License PIN */}
+          {/* Coqui XTTS v2 Cloning: Requires License PIN */}
           <button
             onClick={() => {
               if (!hasActiveLicense || isGuidedUnlocked(3)) {
@@ -114,7 +114,7 @@ export const Header: React.FC<HeaderProps> = ({
                 : 'text-neutral-600 cursor-not-allowed'
             }`}
           >
-            <span className="text-indigo-400 font-semibold">F5-TTS Clonador</span>
+            <span className="text-indigo-400 font-semibold">XTTS v2 Clonador</span>
             {!hasActiveLicense && <Lock className="w-3 h-3 text-amber-400/80" />}
           </button>
 

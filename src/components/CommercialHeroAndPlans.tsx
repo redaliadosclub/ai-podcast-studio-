@@ -13,7 +13,7 @@ export const FALLBACK_PLANS: PlanDefinition[] = [
     features: [
       'Acceso completo a los 5 pasos del estudio',
       'Generación de guiones con IA y prosodia natural',
-      'Clonación directa F5-TTS y calibración ElevenLabs',
+      'Clonación directa Coqui XTTS v2 y calibración ElevenLabs',
       'Exportación master de episodios en audio',
     ],
   },
@@ -171,7 +171,7 @@ export const CommercialHeroAndPlans: React.FC<CommercialHeroAndPlansProps> = ({
                 <Layers className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
                 <span>
                   <strong className="text-neutral-200 font-medium block">Pasos 3, 4 y 5 Pro</strong>
-                  Clonación F5-TTS, Guion IA y Master
+                  Clonación Coqui XTTS v2, Guion IA y Master
                 </span>
               </div>
               <div className="flex items-start gap-2">

@@ -93,7 +93,7 @@ export interface GeneratedEpisodeAudio {
   audioUrl: string;
   audioBlob?: Blob;
   mimeType?: string;
-  engineUsed: 'ElevenLabs' | 'Gemini TTS' | 'F5-TTS / XTTS';
+  engineUsed: 'ElevenLabs' | 'Gemini TTS' | 'Coqui XTTS v2' | 'F5-TTS / XTTS';
   modelOrVoice: string;
   settingsSnapshot?: {
     stability?: number;

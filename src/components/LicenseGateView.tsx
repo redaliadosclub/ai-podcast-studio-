@@ -69,7 +69,7 @@ export const LicenseGateView: React.FC<LicenseGateViewProps> = ({
             Desbloquea {stepName} con tu PIN de Licencia
           </h2>
           <p className="text-sm text-neutral-300 leading-relaxed">
-            Los Pasos 1 (Teleprómter con Coaching Vocal) y 2 (Gestor WAV) son 100% gratuitos. Para acceder a la calibración avanzada, clonación F5-TTS, generación de guiones IA y master final necesitas una suscripción activa.
+            Los Pasos 1 (Teleprómter con Coaching Vocal) y 2 (Gestor WAV) son 100% gratuitos. Para acceder a la calibración avanzada, clonación Coqui XTTS v2, generación de guiones IA y master final necesitas una suscripción activa.
           </p>
         </div>
       </div>

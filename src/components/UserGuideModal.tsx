@@ -172,7 +172,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                       </button>
                     </div>
                     <p className="text-xs text-neutral-400 leading-relaxed">
-                      El usuario prueba en vivo el simulador de parámetros. Aprende por qué la estabilidad debe situarse entre el 35% y 50% para podcasts, y elige entre ElevenLabs, F5-TTS libre o Gemini Audio.
+                      El usuario prueba en vivo el simulador de parámetros. Aprende por qué la estabilidad debe situarse entre el 35% y 50% para podcasts, y elige entre ElevenLabs, Coqui XTTS v2 libre o Gemini Audio.
                     </p>
                   </div>
                 </div>
@@ -290,7 +290,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
 
                 <div className="bg-neutral-950 p-4 rounded-xl border border-emerald-900/50 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-300">Vía 2: F5-TTS / XTTS (Opción C)</span>
+                    <span className="text-xs font-bold text-emerald-300">Vía 2: Coqui XTTS v2 (Opción C)</span>
                     <span className="text-[10px] text-emerald-400 font-mono">100% Gratis / En App</span>
                   </div>
                   <p className="text-xs text-neutral-400 leading-relaxed">

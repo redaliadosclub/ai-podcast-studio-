@@ -24,7 +24,7 @@ export const STUDIO_STEPS: StudioStepInfo[] = [
     stepNumber: 3,
     label: 'Motor & Parámetros',
     shortTitle: 'Calibración',
-    description: 'Elige tu motor (ElevenLabs, F5-TTS libre o Gemini) y comprende los sliders de entonación.',
+    description: 'Elige tu motor (ElevenLabs, Coqui XTTS v2 libre o Gemini) y comprende los sliders de entonación.',
     requirementToUnlockNext: 'Confirma tu motor y parámetros de estabilidad.',
   },
   {
@@ -77,9 +77,9 @@ export const GuidedStepperBanner: React.FC<GuidedStepperBannerProps> = ({
       ? {
           id: 'cloning' as StudioStepId,
           stepNumber: 3,
-          label: 'Clonación F5-TTS In-App',
-          shortTitle: 'F5-TTS',
-          description: 'Flujo de clonación directa por Flow Matching sin salir de la app ni registros externos.',
+          label: 'Clonación Coqui XTTS v2',
+          shortTitle: 'XTTS v2',
+          description: 'Flujo de clonación Zero-Shot en español nativo con Coqui XTTS v2 y Google Colab GPU.',
           requirementToUnlockNext: 'Genera tu audio clonado y continúa al guion.',
         }
       : STUDIO_STEPS.find((s) => s.id === currentStep) || STUDIO_STEPS[0];

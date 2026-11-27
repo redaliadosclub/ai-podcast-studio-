@@ -302,7 +302,7 @@ Quédate conmigo, porque hoy vamos a desgranar paso a paso cómo lograrlo sin co
     teleprompter: 'Paso 1: Teleprómter',
     samples: 'Paso 2: Gestor WAV',
     guide: 'Paso 3: Calibración & Motores',
-    cloning: 'Paso 3: Clonación F5-TTS',
+    cloning: 'Paso 3: Clonación Coqui XTTS v2',
     editor: 'Paso 4: Guion con IA',
     production: 'Paso 5: Master Final',
   };

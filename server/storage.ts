@@ -24,7 +24,7 @@ export const PLANS_CATALOG: Record<PlanId, PlanDefinition> = {
     features: [
       'Acceso completo a los 5 pasos del estudio',
       'Generación de guiones con IA y prosodia natural',
-      'Clonación directa F5-TTS y calibración ElevenLabs',
+      'Clonación directa Coqui XTTS v2 y calibración ElevenLabs',
       'Exportación master de episodios en audio',
     ],
   },

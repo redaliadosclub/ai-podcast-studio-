@@ -316,22 +316,22 @@ export const ElevenLabsGuideView: React.FC<ElevenLabsGuideViewProps> = ({
             </div>
           </div>
 
-          {/* F5-TTS Card */}
+          {/* Coqui XTTS v2 Card */}
           <div className="bg-neutral-950 p-4 rounded-lg border border-indigo-900/60 space-y-3 relative group">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
-                <span>F5-TTS (Código Abierto)</span>
+                <span>Coqui XTTS v2 (Código Abierto)</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 font-normal">Opción C</span>
               </span>
               <span className="text-[11px] font-mono text-emerald-400">100% Gratis</span>
             </div>
             <p className="text-xs text-neutral-400 leading-relaxed">
-              El rey moderno de clonación Zero-Shot por Flow Matching. Clona con solo 10-12s de audio sin cuotas mensuales.
+              Motor multilingüe de clonación Zero-Shot con soporte nativo oficial en español (`language=&quot;es&quot;`). Clona con 10-15s de audio sin cuotas mensuales.
             </p>
             <div className="text-[11px] space-y-1.5 pt-2 border-t border-neutral-800 text-neutral-300">
-              <div><strong>Fidelidad:</strong> 9/10</div>
-              <div><strong>Límite:</strong> Ilimitado (sin tarjetas de crédito).</div>
-              <div><strong>In-App:</strong> Ahora integrado directamente en la app.</div>
+              <div><strong>Fidelidad:</strong> 9/10 en español nativo</div>
+              <div><strong>Límite:</strong> Ilimitado en Google Colab GPU o servidor propio.</div>
+              <div><strong>Integración:</strong> Cuaderno Colab 1-Clic incluido en la app.</div>
             </div>
             {onGoToCloning && (
               <button

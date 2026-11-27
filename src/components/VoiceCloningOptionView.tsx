@@ -297,7 +297,7 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
     }
 
     if (!refText.trim()) {
-      setErrorMessage('El texto de referencia (lo que se dice en la muestra de audio) es requerido por F5-TTS para alinear los fonemas.');
+      setErrorMessage('El texto de referencia (lo que se dice en la muestra de audio) es útil para documentar tu muestra.');
       return;
     }
 
@@ -441,7 +441,7 @@ La entonación fluye de forma orgánica, respetando mis pausas y mi cadencia nat
   };
 
   const handleSendScriptToProduction = () => {
-    onSendToProduction(targetText, 'Episodio Clonado F5-TTS');
+    onSendToProduction(targetText, 'Episodio Clonado Coqui XTTS v2');
   };
 
   const copyColabFix = () => {
@@ -579,7 +579,7 @@ tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es"
                 Muestra Vocal de Referencia (10-15s)
               </h2>
             </div>
-            <span className="text-xs text-neutral-400">Requerido por F5-TTS</span>
+            <span className="text-xs text-neutral-400">Requerido por Coqui XTTS v2</span>
           </div>
 
           {/* Source Tabs: Teleprompter Samples vs In-App Mic vs Upload */}
@@ -736,7 +736,7 @@ tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es"
                 <span>Texto Exacto Pronunciado en la Muestra (Ref Text)</span>
               </label>
               <span className="text-[11px] text-indigo-400 font-medium">
-                Indispensable para Flow Matching
+                Transcripción de respaldo
               </span>
             </div>
             <textarea
@@ -747,7 +747,7 @@ tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es"
               className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-3 text-xs text-neutral-200 focus:outline-none focus:border-indigo-500 leading-relaxed font-sans"
             />
             <p className="text-[11px] text-neutral-500">
-              F5-TTS compara el audio con este texto para aprender tu timbre, ritmo y formantes vocales.
+              Coqui XTTS v2 clona tu timbre, acento y entonación natural en español directamente desde tu muestra WAV.
             </p>
           </div>
         </div>
@@ -809,7 +809,7 @@ tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es"
           {/* Execution Engine Selector */}
           <div className="space-y-4 pt-1 border-t border-neutral-800">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-neutral-300">Modo de Ejecución F5-TTS</span>
+              <span className="text-xs font-semibold text-neutral-300">Modo de Ejecución Coqui XTTS v2</span>
               <div className="flex items-center gap-3 text-xs">
                 <label className="flex items-center gap-1.5 cursor-pointer text-neutral-300">
                   <input
@@ -844,7 +844,7 @@ tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es"
                     type="text"
                     value={customEndpointUrl}
                     onChange={(e) => setCustomEndpointUrl(e.target.value)}
-                    placeholder="https://usuario-f5-tts-spanish.hf.space/api/predict"
+                    placeholder="https://usuario-xtts-v2-spanish.hf.space/api/predict"
                     className="w-full bg-neutral-900 border border-neutral-700 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
                   />
                 </div>
@@ -941,7 +941,7 @@ tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es"
                     Sin GPU externa configurada en el servidor
                   </h4>
                   <p className="text-[11px] text-amber-100/80 leading-relaxed">
-                    Para ejecutar clonación Zero-Shot F5-TTS sin esperas ni errores de red, elige una de estas dos opciones directas:
+                    Para ejecutar clonación Zero-Shot con Coqui XTTS v2 sin esperas ni errores de red, elige una de estas dos opciones directas:
                   </p>
                 </div>
 
@@ -978,7 +978,7 @@ tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es"
                 {isSynthesizing ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                    <span>{fallbackStatus || 'Procesando clonación vocal con F5-TTS...'}</span>
+                    <span>{fallbackStatus || 'Procesando clonación vocal con Coqui XTTS v2...'}</span>
                   </>
                 ) : (
                   <>
@@ -1003,7 +1003,7 @@ tts.tts_to_file(text="Tu guion...", speaker_wav="muestra_voz.wav", language="es"
               <div>
                 <h3 className="text-base font-bold text-white">Audio Sintetizado con tu Voz Clonada</h3>
                 <p className="text-xs text-neutral-400">
-                  Generado mediante el flujo F5-TTS In-App con entonación conversacional.
+                  Generado mediante el flujo Coqui XTTS v2 en español nativo.
                 </p>
               </div>
             </div>

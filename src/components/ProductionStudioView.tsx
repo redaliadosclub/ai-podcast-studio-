@@ -406,8 +406,8 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
           audioUrl,
           audioBlob,
           mimeType,
-          engineUsed: 'F5-TTS / XTTS',
-          modelOrVoice: 'Endpoint GPU F5-TTS',
+          engineUsed: 'Coqui XTTS v2',
+          modelOrVoice: 'Endpoint GPU Coqui XTTS v2',
         };
         setEpisodes((prev) => [newEpisode, ...prev]);
         setSuccessNotice('¡Podcast generado en español con tu muestra vocal!');
@@ -583,7 +583,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
           Estudio de Síntesis y Masterización
         </h1>
         <p className="text-sm text-neutral-400 max-w-2xl leading-relaxed">
-          Genera el episodio completo con clonación de voz (F5-TTS Open Source o ElevenLabs) o realiza una preescucha
+          Genera el episodio completo con clonación de voz (Coqui XTTS v2 Open Source o ElevenLabs) o realiza una preescucha
           rápida para evaluar cadencia y ritmo sin gastar créditos.
         </p>
       </div>
@@ -626,7 +626,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
           }`}
         >
           <Sparkles className="w-3.5 h-3.5" />
-          <span>F5-TTS / XTTS (Clonación Directa)</span>
+          <span>Coqui XTTS v2 (Clonación Directa)</span>
           <span className="text-[10px] bg-emerald-900/60 text-emerald-300 px-1.5 py-0.2 rounded border border-emerald-700/60">
             Opción C
           </span>
@@ -791,7 +791,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
                           type="url"
                           value={customEndpointUrl}
                           onChange={(e) => setCustomEndpointUrl(e.target.value)}
-                          placeholder="https://tu-usuario-f5-tts.hf.space/api/predict"
+                          placeholder="https://tu-usuario-xtts-v2.hf.space/api/predict"
                           className="w-full p-2 rounded bg-neutral-900 border border-neutral-800 text-neutral-200 text-xs font-mono"
                         />
                       </div>
@@ -819,7 +819,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
                         Sin GPU externa configurada en el servidor
                       </div>
                       <p className="text-[11px] text-amber-100/80 leading-relaxed">
-                        La clonación Zero-Shot F5-TTS requiere GPU dedicada. Ejecuta tu audio al instante con una de estas dos opciones directas:
+                        La clonación Zero-Shot con Coqui XTTS v2 requiere GPU dedicada. Ejecuta tu audio al instante con una de estas dos opciones directas:
                       </p>
                     </div>
 
@@ -1265,7 +1265,7 @@ export const ProductionStudioView: React.FC<ProductionStudioViewProps> = ({
                         <span aria-hidden="true">·</span>
                         <span
                           className={`font-medium ${
-                            ep.engineUsed === 'F5-TTS / XTTS'
+                            ep.engineUsed === 'Coqui XTTS v2' || ep.engineUsed === 'F5-TTS / XTTS'
                               ? 'text-emerald-400'
                               : 'text-indigo-400'
                           }`}
