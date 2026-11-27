@@ -1,5 +1,6 @@
 import React from 'react';
 import { StudioStepId } from '../types';
+import { useLowPower } from '../contexts/LowPowerContext';
 import { Lock, KeyRound } from 'lucide-react';
 
 interface HeaderProps {
@@ -27,6 +28,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenPinModal,
   onLogoClick,
 }) => {
+  const { manualLowPower, toggleManualLowPower } = useLowPower();
+
   const isGuidedUnlocked = (stepNum: number) => {
     if (stepNum <= 2) return true; // Pasos 1 y 2 siempre gratis y accesibles
     if (!hasActiveLicense) return false;
@@ -36,7 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="border-b border-neutral-800 bg-neutral-950/90 backdrop-blur-md sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-6 py-3.5 flex items-center justify-between gap-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4">
         {/* Zone 1: Clean Brand Wordmark (hidden/neutralized if White Label is active) */}
         <button
           type="button"
@@ -50,7 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Zone 2: Single-line Navigation Links */}
-        <nav className="hidden lg:flex items-center gap-6 text-sm font-medium">
+        <nav className="hidden lg:flex items-center gap-4 xl:gap-5 text-sm font-medium">
           {/* Step 1: Free */}
           <button
             onClick={() => setActiveTab('teleprompter')}
@@ -157,8 +160,23 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </nav>
 
-        {/* Zone 3: Primary Action */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        {/* Zone 3: Primary Action & Low-Power Toggle */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={toggleManualLowPower}
+            aria-pressed={manualLowPower}
+            title="Pausa animaciones pesadas en reposo y espacia consultas secundarias sin detener audio, síntesis ni descargas"
+            className={`px-2.5 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              manualLowPower
+                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700/80 hover:bg-emerald-900/60'
+                : 'bg-neutral-900 text-neutral-300 border-neutral-700/80 hover:text-white hover:bg-neutral-800'
+            }`}
+          >
+            <span className="hidden md:inline">🔋 Modo Ahorro CPU/Batería</span>
+            <span className="md:hidden">🔋 Ahorro</span>
+          </button>
+
           {!hasActiveLicense && onOpenPinModal && (
             <button
               onClick={onOpenPinModal}

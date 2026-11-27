@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   CommercialConfig,
   DbHealthStatus,
+  GeminiUsageSnapshot,
   PlanDefinition,
   PlanId,
   SuperadminLicense,
   SuperadminOrder,
 } from '../types';
+import { useLowPower } from '../contexts/LowPowerContext';
 import { buildWhatsappUrl } from '../utils/whatsapp';
 import { FALLBACK_PLANS } from './CommercialHeroAndPlans';
 import {
@@ -34,9 +36,13 @@ export const SuperadminView: React.FC<SuperadminViewProps> = ({ onBackHome }) =>
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
 
+  const { manualLowPower, isTabHidden, isLowPowerActive, toggleManualLowPower } = useLowPower();
+  const lastUsageFetchRef = useRef<number>(0);
+
   const [loadingDash, setLoadingDash] = useState(false);
   const [dbStatus, setDbStatus] = useState<DbHealthStatus | null>(null);
   const [geminiPoolCount, setGeminiPoolCount] = useState<number | null>(null);
+  const [geminiUsage, setGeminiUsage] = useState<GeminiUsageSnapshot | null>(null);
   const [config, setConfig] = useState<CommercialConfig>({
     paymentLinks: {
       creator: { mpUrl: '', globalUrl: '' },
@@ -102,12 +108,17 @@ export const SuperadminView: React.FC<SuperadminViewProps> = ({ onBackHome }) =>
       });
       if (res.status === 401) {
         setAdminToken('');
+        setGeminiUsage(null);
         return;
       }
       const data = await res.json();
       if (res.ok) {
         setDbStatus(data.dbStatus);
         setGeminiPoolCount(typeof data.geminiPoolCount === 'number' ? data.geminiPoolCount : 0);
+        if (data.geminiUsage) {
+          setGeminiUsage(data.geminiUsage);
+          lastUsageFetchRef.current = Date.now();
+        }
         setConfig(data.config);
         setOrders(data.orders || []);
         setLicenses(data.licenses || []);
@@ -119,6 +130,54 @@ export const SuperadminView: React.FC<SuperadminViewProps> = ({ onBackHome }) =>
       setLoadingDash(false);
     }
   };
+
+  useEffect(() => {
+    if (!adminToken) return;
+
+    let cancelled = false;
+    const refreshGeminiUsage = async () => {
+      try {
+        lastUsageFetchRef.current = Date.now();
+        const res = await fetch('/api/superadmin/gemini-usage', {
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        if (res.status === 401) {
+          if (!cancelled) {
+            setAdminToken('');
+            setGeminiUsage(null);
+          }
+          return;
+        }
+        if (!res.ok) return;
+        const data = (await res.json()) as GeminiUsageSnapshot;
+        if (!cancelled && data && typeof data.textRequests === 'number') {
+          setGeminiUsage(data);
+          if (data.poolHealth) {
+            setGeminiPoolCount(data.poolHealth.totalKeys);
+          }
+        }
+      } catch {
+        // Silent background refresh failure
+      }
+    };
+
+    // Refresh once on focus if stale (>= 15s) and not in manual low-power mode
+    if (!isTabHidden && !manualLowPower && Date.now() - lastUsageFetchRef.current >= 15000) {
+      void refreshGeminiUsage();
+    }
+
+    // Space secondary usage polling to 4 minutes (240s) in low-power / background tab mode
+    const pollIntervalMs = isLowPowerActive ? 240_000 : 15_000;
+    const intervalId = window.setInterval(() => {
+      if (isTabHidden) return;
+      void refreshGeminiUsage();
+    }, pollIntervalMs);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [adminToken, isLowPowerActive, isTabHidden, manualLowPower]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -429,6 +488,44 @@ export const SuperadminView: React.FC<SuperadminViewProps> = ({ onBackHome }) =>
             </span>
           </div>
 
+          {/* Real-time Daily Gemini Consumption & Active vs 429 Paused Key Indicator */}
+          <div
+            title={
+              geminiUsage
+                ? `Fecha UTC: ${geminiUsage.date} · Claves en pausa por cuota (429): ${geminiUsage.poolHealth.quotaPausedKeys}`
+                : 'Consultando consumo diario...'
+            }
+            className={`px-4 py-2 rounded-xl border text-xs font-medium flex items-center gap-2 ${
+              geminiUsage && geminiUsage.poolHealth.pausedKeys > 0
+                ? 'border-amber-800/70 bg-amber-950/40 text-amber-200'
+                : 'border-neutral-800 bg-neutral-900 text-neutral-200'
+            }`}
+          >
+            <span>
+              {geminiUsage
+                ? `📊 Hoy: ${geminiUsage.ttsRequests} audios TTS / ${geminiUsage.textRequests} guiones • Claves activas: ${geminiUsage.poolHealth.healthyKeys}/${geminiUsage.poolHealth.totalKeys}${
+                    geminiUsage.poolHealth.pausedKeys > 0
+                      ? ` (${geminiUsage.poolHealth.pausedKeys} en pausa 429)`
+                      : ''
+                  }`
+                : '📊 Hoy: -- audios TTS / -- guiones • Claves activas: --/--'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleManualLowPower}
+            aria-pressed={manualLowPower}
+            title="Pausa animaciones pesadas y espacia la actualización automática a 4 minutos"
+            className={`px-3.5 py-2 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition-colors ${
+              manualLowPower
+                ? 'border-emerald-700/80 bg-emerald-950/60 text-emerald-300'
+                : 'border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white'
+            }`}
+          >
+            <span>🔋 Modo Ahorro CPU/Batería</span>
+          </button>
+
           <button
             onClick={() => fetchDashboard(adminToken)}
             disabled={loadingDash}
@@ -439,7 +536,10 @@ export const SuperadminView: React.FC<SuperadminViewProps> = ({ onBackHome }) =>
           </button>
 
           <button
-            onClick={() => setAdminToken('')}
+            onClick={() => {
+              setAdminToken('');
+              setGeminiUsage(null);
+            }}
             className="px-3.5 py-2 bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 rounded-xl text-xs font-medium text-neutral-400 hover:text-white transition-colors"
           >
             Salir

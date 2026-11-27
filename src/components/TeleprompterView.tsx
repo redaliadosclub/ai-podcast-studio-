@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { TELEPROMPTER_SCRIPTS } from '../data/teleprompterScripts';
 import { TeleprompterScriptItem, RecordedSample, AudioQualityMetrics } from '../types';
 import { audioBufferToWav, analyzeAudioBuffer, formatDuration } from '../utils/audioUtils';
 import { triggerBlobDownload, sanitizeFilename } from '../utils/exportHelpers';
+import { useLowPower } from '../contexts/LowPowerContext';
 import { Mic, Square, Play, RotateCcw, Download, CheckCircle, AlertTriangle, Sparkles, Volume2, Info, Upload, ArrowRight } from 'lucide-react';
 
 interface TeleprompterViewProps {
@@ -31,6 +32,8 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
   const [isSavedSuccessfully, setIsSavedSuccessfully] = useState(false);
   const [micPermissionError, setMicPermissionError] = useState<string | null>(null);
 
+  const { isTabHidden, areVisualAnimationsPaused, setStep1Recording } = useLowPower();
+
   // Audio Context & Recording Refs
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -41,6 +44,13 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
   const animFrameRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isRecordingRef = useRef<boolean>(false);
+  const isTabHiddenRef = useRef<boolean>(isTabHidden);
+  const recordingStartTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    isTabHiddenRef.current = isTabHidden;
+  }, [isTabHidden]);
 
   // Cleanup on unmount (delay Blob URL revocation by 15s to avoid breaking active downloads)
   useEffect(() => {
@@ -54,8 +64,16 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
   }, [lastTakeUrl]);
 
   const stopRecordingCleanup = () => {
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    isRecordingRef.current = false;
+    setStep1Recording(false);
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
@@ -156,18 +174,27 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
       };
 
       recorder.start(100);
+      isRecordingRef.current = true;
       setIsRecording(true);
+      // Resume visual animations immediately when starting a recording in Paso 1
+      setStep1Recording(true);
 
-      // Start Timer
+      // Start Timer (skip redundant state updates while tab is hidden; MediaRecorder keeps running)
       const startTime = performance.now();
+      recordingStartTimeRef.current = startTime;
       timerIntervalRef.current = setInterval(() => {
+        if (isTabHiddenRef.current) return;
         const elapsed = (performance.now() - startTime) / 1000;
         setRecordingSeconds(elapsed);
       }, 50);
 
-      // Start Visualizer
-      drawWaveform();
+      // Start Visualizer immediately if tab is visible
+      if (!isTabHiddenRef.current) {
+        drawWaveform();
+      }
     } catch (err: any) {
+      isRecordingRef.current = false;
+      setStep1Recording(false);
       console.error('Error general al iniciar grabación:', err);
       setMicPermissionError(err.message || 'Error inesperado al iniciar la grabación.');
     }
@@ -212,17 +239,30 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
 
   const stopRecording = () => {
     if (!isRecording) return;
+    isRecordingRef.current = false;
     setIsRecording(false);
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    setStep1Recording(false);
+    if (recordingStartTimeRef.current > 0) {
+      setRecordingSeconds((performance.now() - recordingStartTimeRef.current) / 1000);
+    }
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
   };
 
-  // Canvas Waveform & VU Meter draw loop
-  const drawWaveform = () => {
+  // Canvas Waveform & VU Meter draw loop (pauses cleanly when tab is hidden, resumes instantaneously on focus)
+  const drawWaveform = useCallback(() => {
     if (!analyserRef.current || !canvasRef.current) return;
+    if (isTabHiddenRef.current || !isRecordingRef.current) return;
+
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -232,6 +272,10 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
     const dataArray = new Uint8Array(bufferLength);
 
     const render = () => {
+      if (!isRecordingRef.current || isTabHiddenRef.current) {
+        animFrameRef.current = null;
+        return;
+      }
       animFrameRef.current = requestAnimationFrame(render);
       analyser.getByteFrequencyData(dataArray);
 
@@ -266,8 +310,26 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
       }
     };
 
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+    }
     render();
-  };
+  }, []);
+
+  // Instantly resume waveform & timer display when returning focus to the tab
+  useEffect(() => {
+    if (!isTabHidden && isRecording) {
+      if (recordingStartTimeRef.current > 0) {
+        setRecordingSeconds((performance.now() - recordingStartTimeRef.current) / 1000);
+      }
+      if (!animFrameRef.current) {
+        drawWaveform();
+      }
+    } else if (isTabHidden && animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+  }, [isTabHidden, isRecording, drawWaveform]);
 
   const handleSaveTake = () => {
     if (!lastTakeBlob || !lastTakeMetrics) return;
@@ -492,7 +554,7 @@ export const TeleprompterView: React.FC<TeleprompterViewProps> = ({
               </div>
               <div className="h-2 w-full bg-neutral-950 rounded-full overflow-hidden border border-neutral-800 flex">
                 <div
-                  className="h-full transition-all duration-75"
+                  className={`h-full ${areVisualAnimationsPaused ? '' : 'transition-all duration-75'}`}
                   style={{
                     width: `${Math.max(0, Math.min(100, ((currentDb + 60) / 60) * 100))}%`,
                     backgroundColor:

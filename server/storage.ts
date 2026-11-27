@@ -107,6 +107,20 @@ export interface DbHealthStatus {
   detail?: string;
 }
 
+export interface GeminiDailyUsageCounts {
+  date: string; // YYYY-MM-DD
+  textRequests: number;
+  ttsRequests: number;
+}
+
+export interface GeminiDailyUsageEntry {
+  textRequests: number;
+  ttsRequests: number;
+  updatedAt: string;
+}
+
+export type GeminiUsageStore = Record<string, GeminiDailyUsageEntry>;
+
 const DEFAULT_CONFIG: CommercialConfig = {
   paymentLinks: {
     creator: { mpUrl: '', globalUrl: '' },
@@ -356,4 +370,125 @@ export function generateLicensePin(existingLicenses: LicenseRecord[]): string {
     if (!used.has(pin)) return pin;
   }
   throw new Error('No hay pines de 4 dígitos disponibles.');
+}
+
+const GEMINI_USAGE_STORAGE_KEY = 'gemini_daily_usage';
+const MAX_USAGE_RETENTION_DAYS = 30;
+
+let usageMemoryStore: GeminiUsageStore | null = null;
+let usageHydrationPromise: Promise<GeminiUsageStore> | null = null;
+let usagePersistQueue: Promise<void> = Promise.resolve();
+
+export function getCurrentUsageDate(date = new Date()): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function sanitizeUsageStore(raw: unknown): GeminiUsageStore {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const clean: GeminiUsageStore = {};
+  for (const [dateKey, val] of Object.entries(raw as Record<string, any>)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || !val || typeof val !== 'object') continue;
+    clean[dateKey] = {
+      textRequests: Math.max(0, Number(val.textRequests) || 0),
+      ttsRequests: Math.max(0, Number(val.ttsRequests) || 0),
+      updatedAt: typeof val.updatedAt === 'string' ? val.updatedAt : new Date().toISOString(),
+    };
+  }
+  return clean;
+}
+
+function pruneUsageStore(store: GeminiUsageStore): GeminiUsageStore {
+  const sortedDates = Object.keys(store).sort().slice(-MAX_USAGE_RETENTION_DAYS);
+  const pruned: GeminiUsageStore = {};
+  for (const d of sortedDates) {
+    pruned[d] = store[d];
+  }
+  return pruned;
+}
+
+async function ensureUsageStoreHydrated(): Promise<GeminiUsageStore> {
+  if (usageMemoryStore !== null) {
+    return usageMemoryStore;
+  }
+  if (!usageHydrationPromise) {
+    usageHydrationPromise = getStorageValue<GeminiUsageStore>(GEMINI_USAGE_STORAGE_KEY, {})
+      .then((loaded) => {
+        const sanitized = pruneUsageStore(sanitizeUsageStore(loaded));
+        usageMemoryStore = sanitized;
+        return sanitized;
+      })
+      .catch((err) => {
+        console.warn('[Storage] No se pudo hidratar el consumo diario de Gemini, iniciando en memoria:', err);
+        usageMemoryStore = {};
+        return usageMemoryStore;
+      })
+      .finally(() => {
+        usageHydrationPromise = null;
+      });
+  }
+  return usageHydrationPromise;
+}
+
+function scheduleUsagePersist(snapshot: GeminiUsageStore): void {
+  usagePersistQueue = usagePersistQueue
+    .then(async () => {
+      await setStorageValue<GeminiUsageStore>(GEMINI_USAGE_STORAGE_KEY, snapshot);
+    })
+    .catch((err) => {
+      console.warn('[Storage] No se pudo persistir el consumo diario de Gemini:', err);
+    });
+}
+
+export async function recordGeminiDailyUsage(
+  kind: 'text' | 'tts',
+  date = new Date()
+): Promise<GeminiDailyUsageCounts> {
+  const store = await ensureUsageStoreHydrated();
+  const dateKey = getCurrentUsageDate(date);
+  const current = store[dateKey] || {
+    textRequests: 0,
+    ttsRequests: 0,
+    updatedAt: date.toISOString(),
+  };
+
+  const nextEntry: GeminiDailyUsageEntry = {
+    textRequests: current.textRequests + (kind === 'text' ? 1 : 0),
+    ttsRequests: current.ttsRequests + (kind === 'tts' ? 1 : 0),
+    updatedAt: new Date().toISOString(),
+  };
+
+  store[dateKey] = nextEntry;
+  const pruned = pruneUsageStore(store);
+  usageMemoryStore = pruned;
+
+  // Persist deep snapshot asynchronously so Gemini API responses are never blocked or broken
+  const snapshot: GeminiUsageStore = JSON.parse(JSON.stringify(pruned));
+  scheduleUsagePersist(snapshot);
+
+  return {
+    date: dateKey,
+    textRequests: nextEntry.textRequests,
+    ttsRequests: nextEntry.ttsRequests,
+  };
+}
+
+export async function getGeminiDailyUsage(date = new Date()): Promise<GeminiDailyUsageCounts> {
+  const store = await ensureUsageStoreHydrated();
+  const dateKey = getCurrentUsageDate(date);
+  const entry = store[dateKey];
+  return {
+    date: dateKey,
+    textRequests: entry?.textRequests || 0,
+    ttsRequests: entry?.ttsRequests || 0,
+  };
+}
+
+export async function flushGeminiUsagePersistenceForTesting(): Promise<void> {
+  await usagePersistQueue;
+}
+
+export function resetGeminiUsageMemoryForTesting(): void {
+  usageMemoryStore = null;
+  usageHydrationPromise = null;
+  usagePersistQueue = Promise.resolve();
 }

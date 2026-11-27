@@ -24,8 +24,62 @@ export function getGeminiApiKeys(): string[] {
   return parseGeminiApiKeys(process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEYS);
 }
 
+export interface GeminiPoolHealth {
+  totalKeys: number;
+  healthyKeys: number;
+  pausedKeys: number;
+  quotaPausedKeys: number;
+}
+
 export function getGeminiPoolCount(): number {
   return getGeminiApiKeys().length;
+}
+
+export function getGeminiPoolHealth(now = Date.now()): GeminiPoolHealth {
+  const keys = getGeminiApiKeys();
+  const totalKeys = keys.length;
+
+  for (const [key, expiresAt] of keyCooldownUntil.entries()) {
+    if (expiresAt <= now) {
+      keyCooldownUntil.delete(key);
+    }
+  }
+  for (const [entryKey, expiresAt] of keyModelCooldownUntil.entries()) {
+    if (expiresAt <= now) {
+      keyModelCooldownUntil.delete(entryKey);
+    }
+  }
+
+  let pausedKeys = 0;
+  let quotaPausedKeys = 0;
+
+  for (const key of keys) {
+    const globalCooldown = keyCooldownUntil.get(key) || 0;
+    const isGlobalPaused = globalCooldown > now;
+
+    let isQuotaPaused = false;
+    const prefix = `${key}:`;
+    for (const [entryKey, expiresAt] of keyModelCooldownUntil.entries()) {
+      if (entryKey.startsWith(prefix) && expiresAt > now) {
+        isQuotaPaused = true;
+        break;
+      }
+    }
+
+    if (isQuotaPaused) {
+      quotaPausedKeys += 1;
+    }
+    if (isGlobalPaused || isQuotaPaused) {
+      pausedKeys += 1;
+    }
+  }
+
+  return {
+    totalKeys,
+    healthyKeys: Math.max(0, totalKeys - pausedKeys),
+    pausedKeys,
+    quotaPausedKeys,
+  };
 }
 
 function getClientForKey(apiKey: string): GoogleGenAI {

@@ -174,3 +174,18 @@ export interface DbHealthStatus {
   detail?: string;
 }
 
+export interface GeminiPoolHealth {
+  totalKeys: number;
+  healthyKeys: number;
+  pausedKeys: number;
+  quotaPausedKeys: number;
+}
+
+export interface GeminiUsageSnapshot {
+  date: string;
+  textRequests: number;
+  ttsRequests: number;
+  poolHealth: GeminiPoolHealth;
+}
+
+

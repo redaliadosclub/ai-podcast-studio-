@@ -9,6 +9,7 @@ import {
   executeWithGeminiPool,
   extractStatusCode,
   getGeminiPoolCount,
+  getGeminiPoolHealth,
   isQuotaError,
 } from './server/geminiPool.ts';
 import {
@@ -20,6 +21,8 @@ import {
   saveOrders,
   getLicenses,
   saveLicenses,
+  getGeminiDailyUsage,
+  recordGeminiDailyUsage,
   generateOrderCode,
   generateLicensePin,
   isValidHttpUrl,
@@ -85,7 +88,7 @@ async function generateTextWithFallback(params: {
   responseMimeType?: string;
   responseSchema?: any;
 }) {
-  return executeWithGeminiPool(
+  const response = await executeWithGeminiPool(
     TEXT_MODEL_CHAIN,
     async (client, step) =>
       client.models.generateContent({
@@ -101,6 +104,8 @@ async function generateTextWithFallback(params: {
       }),
     'Texto'
   );
+  await recordGeminiDailyUsage('text');
+  return response;
 }
 
 async function generateTtsWithFallback(params: {
@@ -108,7 +113,7 @@ async function generateTtsWithFallback(params: {
   voiceName: 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr';
   style?: string;
 }) {
-  return executeWithGeminiPool(
+  const response = await executeWithGeminiPool(
     TTS_MODEL_CHAIN,
     async (client, step) => {
       const part: Record<string, any> = { text: params.text };
@@ -138,6 +143,8 @@ async function generateTtsWithFallback(params: {
     },
     'TTS'
   );
+  await recordGeminiDailyUsage('tts');
+  return response;
 }
 
 app.use(express.json({ limit: '50mb' }));
@@ -905,18 +912,24 @@ app.post('/api/superadmin/login', (req: Request, res: Response) => {
   return res.json({ token, expiresAt });
 });
 
-// Superadmin dashboard (DB status + config + orders + licenses + Gemini key pool count)
+// Superadmin dashboard (DB status + config + orders + licenses + Gemini key pool & daily usage)
 app.get('/api/superadmin/dashboard', requireSuperadmin, async (_req: Request, res: Response) => {
   try {
-    const [dbStatus, config, orders, licenses] = await Promise.all([
+    const [dbStatus, config, orders, licenses, dailyUsage] = await Promise.all([
       checkDatabaseHealth(),
       getCommercialConfig(),
       getOrders(),
       getLicenses(),
+      getGeminiDailyUsage(),
     ]);
+    const poolHealth = getGeminiPoolHealth();
     return res.json({
       dbStatus,
       geminiPoolCount: getGeminiPoolCount(),
+      geminiUsage: {
+        ...dailyUsage,
+        poolHealth,
+      },
       config,
       orders,
       licenses,
@@ -925,6 +938,20 @@ app.get('/api/superadmin/dashboard', requireSuperadmin, async (_req: Request, re
   } catch (error: any) {
     console.error('Error loading superadmin dashboard:', error);
     return res.status(500).json({ error: 'Error al cargar el panel de administración.' });
+  }
+});
+
+// Superadmin real-time Gemini daily consumption & pool health snapshot (never exposes raw keys)
+app.get('/api/superadmin/gemini-usage', requireSuperadmin, async (_req: Request, res: Response) => {
+  try {
+    const dailyUsage = await getGeminiDailyUsage();
+    return res.json({
+      ...dailyUsage,
+      poolHealth: getGeminiPoolHealth(),
+    });
+  } catch (error: any) {
+    console.error('Error loading Gemini daily usage:', error);
+    return res.status(500).json({ error: 'No se pudo consultar el consumo diario de Gemini.' });
   }
 });
 

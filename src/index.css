@@ -17,3 +17,23 @@
     font-family: var(--font-display);
   }
 }
+
+/* Modo de bajo consumo: pausa animaciones visuales pesadas sin afectar audio, descargas ni procesos */
+html.low-power-tab-hidden *,
+html.low-power-tab-hidden *::before,
+html.low-power-tab-hidden *::after {
+  animation-play-state: paused !important;
+  transition-duration: 0s !important;
+}
+
+html.low-power-animations-paused .animate-pulse,
+html.low-power-animations-paused .animate-bounce,
+html.low-power-animations-paused .animate-ping,
+html.low-power-animations-paused .animate-fade-in {
+  animation-play-state: paused !important;
+}
+
+html.low-power-animations-paused *:not(.low-power-exempt) {
+  transition-duration: 0s !important;
+}
+
